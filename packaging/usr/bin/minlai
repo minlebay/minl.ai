@@ -1,0 +1,11 @@
+#!/bin/bash
+# minl.ai launcher — activates the venv and delegates to main.py
+INSTALL_DIR="/usr/lib/minlai"
+VENV_PYTHON="$INSTALL_DIR/venv/bin/python3"
+
+if [ ! -x "$VENV_PYTHON" ]; then
+    echo "minl.ai venv not found. Try: sudo dpkg --configure minlai" >&2
+    exit 1
+fi
+
+exec "$VENV_PYTHON" "$INSTALL_DIR/main.py" "$@"

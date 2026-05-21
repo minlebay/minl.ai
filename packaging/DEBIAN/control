@@ -1,0 +1,13 @@
+Package: minlai
+Version: 2.0.0
+Architecture: all
+Maintainer: minl.ai <minlai@localhost>
+Depends: python3 (>= 3.11), python3-pip, libxcb-cursor0, libportaudio2
+Recommends: flameshot | kde-spectacle, xclip | xsel
+Section: utils
+Priority: optional
+Description: Lightweight system-wide AI assistant for KDE/Linux
+ minl.ai is a floating overlay AI assistant powered by Claude or Gemini.
+ Trigger it via hotkey to analyze screen regions or selected text.
+ Features a system tray icon, settings dialog, light/dark themes, and
+ per-session conversation context for follow-up questions.

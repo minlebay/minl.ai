@@ -1,0 +1,49 @@
+#!/bin/bash
+set -e
+
+INSTALL_DIR="/usr/lib/minlai"
+VENV_DIR="$INSTALL_DIR/venv"
+
+echo "Setting up Orbit Python environment…"
+
+# Create venv if it doesn't exist yet
+if [ ! -d "$VENV_DIR" ]; then
+    python3 -m venv "$VENV_DIR"
+fi
+
+# Install / upgrade pip dependencies into the venv
+# PyQt6 is installed here rather than via apt to work on all distro versions
+"$VENV_DIR/bin/pip" install --quiet --upgrade \
+    "PyQt6>=6.6.0" \
+    "anthropic>=0.40.0" \
+    "google-genai>=1.0.0" \
+    "pynput>=1.7.6" \
+    "sounddevice>=0.4.6" \
+    "numpy>=1.24.0"
+
+# If running Python < 3.11, also install tomli for TOML parsing
+python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)" \
+    || "$VENV_DIR/bin/pip" install --quiet "tomli>=2.0.1"
+
+# Copy icon to hicolor theme
+if [ -f "$INSTALL_DIR/minlai.svg" ]; then
+    install -Dm644 "$INSTALL_DIR/minlai.svg" /usr/share/icons/hicolor/scalable/apps/minlai.svg
+fi
+
+# Update icon cache if gtk-update-icon-cache is available
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q /usr/share/icons/hicolor || true
+fi
+
+# Update desktop database
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+
+echo "minl.ai installed successfully."
+echo "Run 'minlai' or launch it from your application menu."
+echo ""
+echo "Set your API key:"
+echo "  Anthropic: export ANTHROPIC_API_KEY=sk-ant-..."
+echo "  Gemini:    export GEMINI_API_KEY=AIza..."
+echo "Or add it in the Settings dialog (tray icon → Settings…)"

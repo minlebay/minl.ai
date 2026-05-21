@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+
+# Stop any running minl.ai process (exact name match to avoid killing apt itself)
+pkill -x minlai 2>/dev/null || true

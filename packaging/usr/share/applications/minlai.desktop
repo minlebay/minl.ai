@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=minl.ai
+GenericName=AI Assistant
+Comment=Lightweight system-wide AI assistant powered by Claude or Gemini
+Exec=minlai --tray
+Icon=minlai
+Terminal=false
+Type=Application
+Categories=Utility;Productivity;
+Keywords=AI;assistant;Claude;Gemini;screenshot;clipboard;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
