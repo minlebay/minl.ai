@@ -15,6 +15,7 @@ import sys
 
 import logger as _logger
 from config import load_config, PROVIDER_GEMINI
+from version import __version__
 from capture import capture_screenshot, read_clipboard
 from ai import MinlAI
 from voice import transcribe_audio, voice_input_available
@@ -148,6 +149,7 @@ def main() -> None:
         prog="minlai",
         description="minl.ai — Linux desktop AI assistant",
     )
+    parser.add_argument("--version", "-V", action="version", version=f"minlai {__version__}")
     parser.add_argument(
         "--tray", "-T",
         action="store_true",

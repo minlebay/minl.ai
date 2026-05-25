@@ -3,10 +3,11 @@
 # Usage: ./build_deb.sh [version]
 set -euo pipefail
 
-VERSION="${1:-2.3.7}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_VERSION="$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
+VERSION="${1:-${SCRIPT_VERSION:-2.3.7}}"
 PKG_NAME="minlai"
 BUILD_DIR="$(mktemp -d)"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "Building ${PKG_NAME}_${VERSION}_all.deb …"
 
@@ -26,9 +27,10 @@ sed -i "s/^Version:.*/Version: $VERSION/" "$PKG_ROOT/DEBIAN/control"
 # ── Install Python source files ───────────────────────────────────────────────
 DEST="$PKG_ROOT/usr/lib/minlai"
 mkdir -p "$DEST"
-for py in main.py capture.py ai.py overlay.py tray.py settings_dialog.py config.py themes.py voice.py logger.py; do
+for py in main.py capture.py ai.py overlay.py tray.py settings_dialog.py config.py themes.py voice.py logger.py version.py; do
     install -m 644 "$SCRIPT_DIR/$py" "$DEST/"
 done
+install -m 644 "$SCRIPT_DIR/VERSION" "$DEST/"
 
 # ── Install icon ──────────────────────────────────────────────────────────────
 mkdir -p "$PKG_ROOT/usr/share/icons/hicolor/scalable/apps"

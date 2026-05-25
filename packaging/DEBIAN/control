@@ -1,5 +1,5 @@
 Package: minlai
-Version: 2.3.7
+Version: 2.3.8
 Architecture: all
 Maintainer: Ilshat Minnibaev <ilshatminnibaev@gmail.com>
 Depends: python3 (>= 3.11), python3-pip, libxcb-cursor0, libportaudio2

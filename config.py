@@ -89,7 +89,6 @@ class OverlayConfig:
     theme: str = "dark"
     blur_enabled: bool = False
     blur_radius: int = 10
-    corner_radius: int = 0
     audio_device: str = ""   # PulseAudio source name; empty = system default
 
 
@@ -116,46 +115,58 @@ def set_autostart(enabled: bool) -> None:
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 
+def _toml_str(v: str) -> str:
+    """Escape a string value for safe embedding in a TOML double-quoted string."""
+    return v.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _ensure_default_config() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_FILE.exists():
         CONFIG_FILE.write_text(DEFAULT_CONFIG_TOML)
+        try:
+            CONFIG_FILE.chmod(0o600)
+        except OSError:
+            pass
 
 
 def save_config(config: Config) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     lines: list[str] = [
         "[api]",
-        f'provider = "{config.api.provider}"',
+        f'provider = "{_toml_str(config.api.provider)}"',
     ]
     if config.api.anthropic_api_key:
-        lines.append(f'anthropic_api_key = "{config.api.anthropic_api_key}"')
+        lines.append(f'anthropic_api_key = "{_toml_str(config.api.anthropic_api_key)}"')
     if config.api.gemini_api_key:
-        lines.append(f'gemini_api_key    = "{config.api.gemini_api_key}"')
+        lines.append(f'gemini_api_key    = "{_toml_str(config.api.gemini_api_key)}"')
     lines += [
-        f'model = "{config.api.model}"',
+        f'model = "{_toml_str(config.api.model)}"',
         f"max_tokens = {config.api.max_tokens}",
-        f'language = "{config.api.language}"',
-        f'stt_model = "{config.api.stt_model}"',
+        f'language = "{_toml_str(config.api.language)}"',
+        f'stt_model = "{_toml_str(config.api.stt_model)}"',
         "",
         "[hotkeys]",
-        f'screenshot      = "{config.hotkeys.screenshot}"',
-        f'clipboard       = "{config.hotkeys.clipboard}"',
-        f'screenshot_tool = "{config.hotkeys.screenshot_tool}"',
+        f'screenshot      = "{_toml_str(config.hotkeys.screenshot)}"',
+        f'clipboard       = "{_toml_str(config.hotkeys.clipboard)}"',
+        f'screenshot_tool = "{_toml_str(config.hotkeys.screenshot_tool)}"',
         "",
         "[overlay]",
         f"width     = {config.overlay.width}",
         f"height    = {config.overlay.height}",
         f"opacity   = {config.overlay.opacity}",
         f"font_size = {config.overlay.font_size}",
-        f'theme     = "{config.overlay.theme}"',
+        f'theme     = "{_toml_str(config.overlay.theme)}"',
         f"blur_enabled   = {'true' if config.overlay.blur_enabled else 'false'}",
         f"blur_radius    = {config.overlay.blur_radius}",
-        f"corner_radius  = {config.overlay.corner_radius}",
-        f'audio_device   = "{config.overlay.audio_device}"',
+        f'audio_device   = "{_toml_str(config.overlay.audio_device)}"',
         "",
     ]
     CONFIG_FILE.write_text("\n".join(lines))
+    try:
+        CONFIG_FILE.chmod(0o600)
+    except OSError:
+        pass
 
 
 def load_config() -> Config:
@@ -202,7 +213,6 @@ def load_config() -> Config:
             theme=overlay_raw.get("theme", "dark"),
             blur_enabled=bool(overlay_raw.get("blur_enabled", False)),
             blur_radius=int(overlay_raw.get("blur_radius", 10)),
-            corner_radius=int(overlay_raw.get("corner_radius", 0)),
             audio_device=str(overlay_raw.get("audio_device", "")),
         ),
     )

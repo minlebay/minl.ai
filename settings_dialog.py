@@ -277,11 +277,6 @@ class SettingsDialog(QDialog):
         self._blur_cb.toggled.connect(self._blur_radius.setEnabled)
         form.addRow("Blur:", blur_row)
 
-        self._corner_radius = QSpinBox()
-        self._corner_radius.setRange(0, 20)
-        self._corner_radius.setSuffix(" px")
-        form.addRow("Corner radius:", self._corner_radius)
-
         return box
 
     def _build_voice_group(self) -> QGroupBox:
@@ -417,7 +412,6 @@ class SettingsDialog(QDialog):
         self._blur_cb.setChecked(self._config.overlay.blur_enabled)
         self._blur_radius.setValue(self._config.overlay.blur_radius)
         self._blur_radius.setEnabled(self._config.overlay.blur_enabled)
-        self._corner_radius.setValue(self._config.overlay.corner_radius)
         idx = self._audio_device.findData(self._config.overlay.audio_device)
         self._audio_device.setCurrentIndex(idx if idx >= 0 else 0)
         self._autostart_cb.setChecked(is_autostart_enabled())
@@ -446,7 +440,6 @@ class SettingsDialog(QDialog):
         self._config.overlay.theme = THEMES[self._theme.currentIndex()][1]
         self._config.overlay.blur_enabled = self._blur_cb.isChecked()
         self._config.overlay.blur_radius = self._blur_radius.value()
-        self._config.overlay.corner_radius = self._corner_radius.value()
         self._config.overlay.audio_device = self._audio_device.currentData() or ""
 
         save_config(self._config)

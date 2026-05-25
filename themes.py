@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
+import tempfile
+from typing import Optional
+
+_SVG_DIR: Optional[str] = None
+
+
+def _get_svg_dir() -> str:
+    global _SVG_DIR
+    if _SVG_DIR is None:
+        _SVG_DIR = tempfile.mkdtemp(prefix="minlai_svg_")
+        atexit.register(lambda: shutil.rmtree(_SVG_DIR, ignore_errors=True))
+    return _SVG_DIR
 
 
 def _write_svg(svg: str, name: str) -> str:
-    """Write SVG to /tmp/minlai_{name}.svg — Qt can reference it in url()."""
-    path = f"/tmp/minlai_{name}.svg"
+    """Write SVG to a session-private temp dir — Qt can reference it in url()."""
+    path = os.path.join(_get_svg_dir(), f"{name}.svg")
     try:
         with open(path, "w") as f:
             f.write(svg)

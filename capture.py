@@ -40,41 +40,31 @@ def _capture_flameshot() -> Optional[bytes]:
 
 
 def _capture_spectacle() -> Optional[bytes]:
-    fd, tmp_path = tempfile.mkstemp(suffix=".png")
-    os.close(fd)
-    os.unlink(tmp_path)  # spectacle creates the file itself; it must not pre-exist
-
+    import shutil
+    tmp_dir = tempfile.mkdtemp(prefix="minlai_")
+    tmp_path = os.path.join(tmp_dir, "capture.png")
     try:
-        subprocess.run(
-            ["spectacle", "--region", "--background", "--nonotify", "--output", tmp_path],
-            capture_output=True,
-            timeout=120,
-        )
-    except FileNotFoundError:
-        print("Error: spectacle not found. Install: sudo apt install kde-spectacle", file=sys.stderr)
-        return None
-    except subprocess.TimeoutExpired:
-        print("Screenshot timed out.", file=sys.stderr)
-        _unlink_safe(tmp_path)
-        return None
+        try:
+            subprocess.run(
+                ["spectacle", "--region", "--background", "--nonotify", "--output", tmp_path],
+                capture_output=True,
+                timeout=120,
+            )
+        except FileNotFoundError:
+            print("Error: spectacle not found. Install: sudo apt install kde-spectacle", file=sys.stderr)
+            return None
+        except subprocess.TimeoutExpired:
+            print("Screenshot timed out.", file=sys.stderr)
+            return None
 
-    if not os.path.exists(tmp_path):
-        return None  # user cancelled
+        if not os.path.exists(tmp_path):
+            return None  # user cancelled
 
-    try:
         with open(tmp_path, "rb") as f:
             data = f.read()
+        return data if data else None
     finally:
-        _unlink_safe(tmp_path)
-
-    return data if data else None
-
-
-def _unlink_safe(path: str) -> None:
-    try:
-        os.unlink(path)
-    except OSError:
-        pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def read_clipboard() -> Optional[str]:
