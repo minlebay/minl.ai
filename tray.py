@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 )
 
 import logger as _log
-from ai import OrbitAI
+from ai import MinlAI
 from capture import capture_screenshot, read_clipboard
 from config import Config, PROVIDER_GEMINI
 from voice import transcribe_audio, sounddevice_available
@@ -54,8 +54,8 @@ class HotkeyBridge(QObject):
 # Tray icon
 # ------------------------------------------------------------------ #
 
-class OrbitTray(QObject):
-    def __init__(self, config: Config, ai: OrbitAI) -> None:
+class MinlTray(QObject):
+    def __init__(self, config: Config, ai: MinlAI) -> None:
         super().__init__()
         self._config = config
         self._ai = ai

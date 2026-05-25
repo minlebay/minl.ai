@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
+import re
 import sys
 import threading
 from typing import Callable, Optional
 
-from PyQt6.QtCore import Qt, QThread, QPoint, pyqtSignal, QObject
-from PyQt6.QtGui import QCursor, QKeySequence, QShortcut, QTextCursor
+from PyQt6.QtCore import Qt, QRectF, QSize, QThread, pyqtSignal, QObject
+from PyQt6.QtGui import (
+    QColor, QIcon, QKeySequence, QPainter, QPen,
+    QPixmap, QShortcut, QTextCursor,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QMainWindow,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QTextEdit,
     QVBoxLayout,
@@ -27,30 +29,99 @@ from config import OverlayConfig
 
 APP_NAME = "minl.ai"
 
+_RGBA_RE = re.compile(r'rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)')
+_HEX_RE  = re.compile(r'#([0-9a-fA-F]{6})')
 
-class _DragBar(QWidget):
-    """Title bar that acts as a drag handle for the frameless window."""
 
-    def __init__(self, parent: QWidget) -> None:
-        super().__init__(parent)
-        self._drag_start: QPoint | None = None
-        self.setCursor(QCursor(Qt.CursorShape.SizeAllCursor))
+def _parse_rgba(s: str) -> QColor:
+    m = _RGBA_RE.match(s)
+    if m:
+        return QColor(int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                      round(float(m.group(4)) * 255))
+    m = _HEX_RE.match(s)
+    if m:
+        return QColor(f"#{m.group(1)}")
+    return QColor(24, 25, 27, 220)
 
-    def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = (
-                event.globalPosition().toPoint() - self.window().frameGeometry().topLeft()
+
+def _kwin_blur(win_id: int, width: int, height: int, enabled: bool) -> None:
+    """Set/remove _KDE_NET_WM_BLUR_BEHIND_REGION so KWin blurs the area behind the window."""
+    import os, subprocess
+    if not os.environ.get("DISPLAY"):
+        return
+    try:
+        wid = hex(int(win_id))
+        if enabled:
+            subprocess.run(
+                ["xprop", "-id", wid,
+                 "-f", "_KDE_NET_WM_BLUR_BEHIND_REGION", "32c",
+                 "-set", "_KDE_NET_WM_BLUR_BEHIND_REGION",
+                 f"0, 0, {width}, {height}"],
+                capture_output=True, timeout=3, check=False,
             )
-        super().mousePressEvent(event)
+        else:
+            subprocess.run(
+                ["xprop", "-id", wid, "-remove", "_KDE_NET_WM_BLUR_BEHIND_REGION"],
+                capture_output=True, timeout=3, check=False,
+            )
+    except Exception:
+        pass
 
-    def mouseMoveEvent(self, event) -> None:
-        if event.buttons() == Qt.MouseButton.LeftButton and self._drag_start is not None:
-            self.window().move(event.globalPosition().toPoint() - self._drag_start)
-        super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event) -> None:
-        self._drag_start = None
-        super().mouseReleaseEvent(event)
+def _paint_mic_icon(size: int, color: QColor) -> QPixmap:
+    """Draw a schematic microphone: capsule + arc base + stem + foot."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(color, max(1.3, size * 0.09))
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    s = float(size)
+    cx = s / 2
+    cw, ch = s * 0.40, s * 0.45
+    # Capsule body
+    p.drawRoundedRect(QRectF(cx - cw / 2, s * 0.05, cw, ch), cw / 2, cw / 2)
+    # Base arc (∪-shape)
+    arm = s * 0.25
+    cap_bot = s * 0.05 + ch
+    p.drawArc(QRectF(cx - arm, cap_bot - arm, arm * 2, arm * 2), 180 * 16, -180 * 16)
+    # Stem
+    arc_bot = cap_bot + arm
+    p.drawLine(int(cx), int(arc_bot), int(cx), int(s * 0.88))
+    # Foot
+    fw = s * 0.20
+    p.drawLine(int(cx - fw), int(s * 0.88), int(cx + fw), int(s * 0.88))
+    p.end()
+    return pix
+
+
+def _paint_stop_icon(size: int, color: QColor) -> QPixmap:
+    """Draw a filled rounded square (stop/record indicator)."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    m = size * 0.25
+    p.drawRoundedRect(QRectF(m, m, size - 2 * m, size - 2 * m), 2.5, 2.5)
+    p.end()
+    return pix
+
+
+class _CentralWidget(QWidget):
+    """Central widget with paintEvent override so Qt stylesheet background: renders."""
+
+    def paintEvent(self, event) -> None:
+        from PyQt6.QtWidgets import QStyleOption, QStyle
+        opt = QStyleOption()
+        opt.initFrom(self)
+        p = QPainter(self)
+        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget, opt, p, self)
+        p.end()
 
 
 class WorkerSignals(QObject):
@@ -103,7 +174,7 @@ class _VoiceWorker(QThread):
             self.error.emit(str(exc))
 
 
-class OrbitOverlay(QMainWindow):
+class MinlOverlay(QMainWindow):
     def __init__(
         self,
         config: OverlayConfig,
@@ -118,7 +189,7 @@ class OrbitOverlay(QMainWindow):
         self._on_transcribe = on_transcribe
         self._worker: Optional[AIWorker] = None
         self._voice_worker: Optional[_VoiceWorker] = None
-        self._recorder = None  # created lazily when mic button pressed
+        self._recorder = None
         self._last_fn: Optional[Callable[[], str]] = None
 
         self._build_ui()
@@ -127,7 +198,7 @@ class OrbitOverlay(QMainWindow):
         if loading:
             self._set_loading()
         elif initial_response:
-            self._append_message("Orbit", initial_response)
+            self._append_message(APP_NAME, initial_response)
 
     # ------------------------------------------------------------------ #
     # UI construction
@@ -135,26 +206,18 @@ class OrbitOverlay(QMainWindow):
 
     def _build_ui(self) -> None:
         self.setWindowTitle(APP_NAME)
-        self.setWindowFlags(
-            Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Tool
-        )
+        self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(self._config.width, self._config.height)
         self._center_on_screen()
 
-        central = QWidget()
+        central = _CentralWidget()
         central.setObjectName("central")
         self.setCentralWidget(central)
 
         layout = QVBoxLayout(central)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
-
-        # Title bar
-        title_bar = self._build_title_bar()
-        layout.addWidget(title_bar)
 
         # Chat area
         self._chat = QTextEdit()
@@ -169,30 +232,6 @@ class OrbitOverlay(QMainWindow):
         # Escape shortcut
         esc = QShortcut(QKeySequence("Escape"), self)
         esc.activated.connect(self.close)
-
-    def _build_title_bar(self) -> QWidget:
-        bar = _DragBar(self)
-        bar.setObjectName("titleBar")
-        h = QHBoxLayout(bar)
-        h.setContentsMargins(0, 0, 0, 0)
-
-        icon = QLabel("◎")
-        icon.setObjectName("titleIcon")
-        h.addWidget(icon)
-
-        title = QLabel(APP_NAME)
-        title.setObjectName("titleLabel")
-        h.addWidget(title)
-        h.addStretch()
-
-        close_btn = QPushButton("✕")
-        close_btn.setObjectName("closeBtn")
-        close_btn.setFixedSize(24, 24)
-        close_btn.clicked.connect(self.close)
-        close_btn.setToolTip("Close (Esc)")
-        h.addWidget(close_btn)
-
-        return bar
 
     def _build_input_row(self) -> QWidget:
         row = QWidget()
@@ -209,11 +248,11 @@ class OrbitOverlay(QMainWindow):
         # Mic button — only shown when a transcribe callback is provided
         self._mic_btn: Optional[QPushButton] = None
         if self._on_transcribe is not None:
-            self._mic_btn = QPushButton("🎙")
+            self._mic_btn = QPushButton()
             self._mic_btn.setObjectName("micBtn")
-            self._mic_btn.setFixedWidth(36)
-            self._mic_btn.setToolTip("Hold to record voice (click to start/stop)")
+            self._mic_btn.setToolTip("Click to record voice")
             self._mic_btn.clicked.connect(self._on_mic_clicked)
+            self._refresh_mic_icon()
             h.addWidget(self._mic_btn)
 
         self._retry_btn = QPushButton("↺ Retry")
@@ -241,9 +280,37 @@ class OrbitOverlay(QMainWindow):
     # Style
     # ------------------------------------------------------------------ #
 
+    def _refresh_mic_icon(self, state: str = "idle") -> None:
+        if self._mic_btn is None:
+            return
+        sz = self._config.font_size + 6
+        c = themes.get(self._config.theme)
+        if state == "recording":
+            icon_pix = _paint_stop_icon(sz, _parse_rgba(c['mic_rec_text']))
+        else:
+            color_key = 'text_muted' if state == "transcribing" else 'mic_text'
+            icon_pix = _paint_mic_icon(sz, _parse_rgba(c[color_key]))
+        self._mic_btn.setIcon(QIcon(icon_pix))
+        self._mic_btn.setIconSize(QSize(sz, sz))
+
     def _apply_style(self) -> None:
         self.setStyleSheet(themes.overlay_style(self._config.font_size, self._config.theme))
         self.setWindowOpacity(self._config.opacity)
+        self._refresh_mic_icon()
+
+    def _apply_blur(self) -> None:
+        """Ask KWin to blur the desktop region behind this window."""
+        if not self._config.blur_enabled:
+            return
+        _kwin_blur(int(self.winId()), self.width(), self.height(), enabled=True)
+        self.setStyleSheet(
+            themes.overlay_style(self._config.font_size, self._config.theme, blur_bg=True)
+        )
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._config.blur_enabled:
+            _kwin_blur(int(self.winId()), self.width(), self.height(), enabled=True)
 
     # ------------------------------------------------------------------ #
     # Chat helpers
@@ -379,23 +446,21 @@ class OrbitOverlay(QMainWindow):
         if self._mic_btn is None:
             return
         if state == "recording":
-            self._mic_btn.setText("⏹")
             self._mic_btn.setProperty("recording", "true")
             self._mic_btn.setToolTip("Recording… click to stop")
             self._input.setPlaceholderText("Listening…")
             self._mic_btn.setEnabled(True)
         elif state == "transcribing":
-            self._mic_btn.setText("…")
             self._mic_btn.setProperty("recording", "false")
             self._mic_btn.setToolTip("Transcribing…")
             self._input.setPlaceholderText("Transcribing…")
             self._mic_btn.setEnabled(False)
         else:  # idle
-            self._mic_btn.setText("🎙")
             self._mic_btn.setProperty("recording", "false")
             self._mic_btn.setToolTip("Click to record voice")
             self._input.setPlaceholderText("Ask a follow-up question…")
             self._mic_btn.setEnabled(True)
+        self._refresh_mic_icon(state)
         # Force Qt to re-evaluate the stylesheet for property changes
         self._mic_btn.style().unpolish(self._mic_btn)
         self._mic_btn.style().polish(self._mic_btn)
@@ -440,15 +505,16 @@ def show_overlay(
     on_follow_up: Callable[[str], str],
     on_transcribe: Optional[Callable[[bytes], str]] = None,
     initial_fn: Optional[Callable[[], str]] = None,
-) -> "OrbitOverlay":
+) -> "MinlOverlay":
     """Create and show overlay within an already-running QApplication event loop."""
-    overlay = OrbitOverlay(
+    overlay = MinlOverlay(
         config=config,
         on_follow_up=on_follow_up,
         on_transcribe=on_transcribe,
         loading=initial_fn is not None,
     )
     overlay.show()
+    overlay._apply_blur()  # set KWin blur AFTER window is mapped
     overlay.raise_()
     overlay.activateWindow()
 

@@ -1,4 +1,4 @@
-"""Claude and Gemini API backends with a unified OrbitAI facade."""
+"""Claude and Gemini API backends with a unified MinlAI facade."""
 
 from __future__ import annotations
 
@@ -118,7 +118,7 @@ class _GeminiBackend:
 
 # ── Public facade ─────────────────────────────────────────────────────────────
 
-class OrbitAI:
+class MinlAI:
     def __init__(self, config: Config) -> None:
         self._config = config
         self._backend = self._make_backend()

@@ -16,18 +16,18 @@ import sys
 import logger as _logger
 from config import load_config, PROVIDER_GEMINI
 from capture import capture_screenshot, read_clipboard
-from ai import OrbitAI
+from ai import MinlAI
 from voice import transcribe_audio, sounddevice_available
 
 
-def _transcribe_fn(ai: OrbitAI):
+def _transcribe_fn(ai: MinlAI):
     """Return transcription callback if sounddevice is available, else None."""
     if not sounddevice_available():
         return None
     return lambda audio_bytes: transcribe_audio(audio_bytes, ai._config)
 
 
-def _require_api_key(ai: OrbitAI) -> None:
+def _require_api_key(ai: MinlAI) -> None:
     cfg = ai._config.api
     if cfg.provider == PROVIDER_GEMINI:
         if not cfg.gemini_api_key:
@@ -47,7 +47,7 @@ def _require_api_key(ai: OrbitAI) -> None:
             sys.exit(1)
 
 
-def run_screenshot_mode(ai: OrbitAI, headless: bool = False) -> None:
+def run_screenshot_mode(ai: MinlAI, headless: bool = False) -> None:
     """Capture a screen region and send to the AI."""
     tool = ai._config.hotkeys.screenshot_tool
     print(f"Select a screen region ({tool})…")
@@ -72,7 +72,7 @@ def run_screenshot_mode(ai: OrbitAI, headless: bool = False) -> None:
         )
 
 
-def run_text_mode(ai: OrbitAI, headless: bool = False) -> None:
+def run_text_mode(ai: MinlAI, headless: bool = False) -> None:
     """Read clipboard/selection and send to Claude."""
     text = read_clipboard()
     if not text:
@@ -104,7 +104,7 @@ def run_text_mode(ai: OrbitAI, headless: bool = False) -> None:
         )
 
 
-def run_tray_mode(ai: OrbitAI) -> None:
+def run_tray_mode(ai: MinlAI) -> None:
     """Start tray icon + hotkey daemon (the primary mode)."""
     import os
     # Qt needs DISPLAY; give a helpful error on pure Wayland/headless
@@ -125,8 +125,8 @@ def run_tray_mode(ai: OrbitAI) -> None:
     if not QApplication.instance().platformName() in ("xcb", "wayland", "offscreen"):
         pass  # accept whatever platform Qt chose
 
-    from tray import OrbitTray
-    tray = OrbitTray(config=ai._config, ai=ai)
+    from tray import MinlTray
+    tray = MinlTray(config=ai._config, ai=ai)
     tray.start_hotkeys()
 
     cfg = ai._config.hotkeys
@@ -175,7 +175,7 @@ def main() -> None:
         args.tray = True
 
     config = load_config()
-    ai = OrbitAI(config)
+    ai = MinlAI(config)
 
     if args.screenshot:
         _require_api_key(ai)

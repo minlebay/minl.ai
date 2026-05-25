@@ -135,7 +135,7 @@ theme     = "dark"              # "dark" or "light"
 minl.ai/
   main.py             — entry point, CLI flags, tray mode launcher
   capture.py          — flameshot/spectacle screenshot + xclip/xsel clipboard
-  ai.py               — AnthropicBackend + GeminiBackend + OrbitAI facade
+  ai.py               — AnthropicBackend + GeminiBackend + MinlAI facade
   overlay.py          — PyQt6 floating overlay window
   tray.py             — QSystemTrayIcon, hotkey bridge, log viewer, capture worker
   settings_dialog.py  — PyQt6 settings form

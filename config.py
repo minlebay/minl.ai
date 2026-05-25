@@ -87,6 +87,9 @@ class OverlayConfig:
     opacity: float = 0.95
     font_size: int = 13
     theme: str = "dark"
+    blur_enabled: bool = False
+    blur_radius: int = 10
+    corner_radius: int = 0
 
 
 @dataclass
@@ -145,6 +148,9 @@ def save_config(config: Config) -> None:
         f"opacity   = {config.overlay.opacity}",
         f"font_size = {config.overlay.font_size}",
         f'theme     = "{config.overlay.theme}"',
+        f"blur_enabled   = {'true' if config.overlay.blur_enabled else 'false'}",
+        f"blur_radius    = {config.overlay.blur_radius}",
+        f"corner_radius  = {config.overlay.corner_radius}",
         "",
     ]
     CONFIG_FILE.write_text("\n".join(lines))
@@ -192,5 +198,8 @@ def load_config() -> Config:
             opacity=float(overlay_raw.get("opacity", 0.95)),
             font_size=int(overlay_raw.get("font_size", 13)),
             theme=overlay_raw.get("theme", "dark"),
+            blur_enabled=bool(overlay_raw.get("blur_enabled", False)),
+            blur_radius=int(overlay_raw.get("blur_radius", 10)),
+            corner_radius=int(overlay_raw.get("corner_radius", 12)),
         ),
     )

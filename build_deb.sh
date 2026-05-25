@@ -3,7 +3,7 @@
 # Usage: ./build_deb.sh [version]
 set -euo pipefail
 
-VERSION="${1:-2.0.0}"
+VERSION="${1:-2.3.7}"
 PKG_NAME="minlai"
 BUILD_DIR="$(mktemp -d)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

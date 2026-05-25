@@ -260,6 +260,27 @@ class SettingsDialog(QDialog):
             self._theme.addItem(label)
         form.addRow("Theme:", self._theme)
 
+        blur_row = QWidget()
+        h_blur = QHBoxLayout(blur_row)
+        h_blur.setContentsMargins(0, 0, 0, 0)
+        h_blur.setSpacing(8)
+        self._blur_cb = QCheckBox("Enable")
+        h_blur.addWidget(self._blur_cb)
+        h_blur.addWidget(QLabel("Radius:"))
+        self._blur_radius = QSpinBox()
+        self._blur_radius.setRange(1, 30)
+        self._blur_radius.setSuffix(" px")
+        self._blur_radius.setEnabled(False)
+        h_blur.addWidget(self._blur_radius)
+        h_blur.addStretch()
+        self._blur_cb.toggled.connect(self._blur_radius.setEnabled)
+        form.addRow("Blur:", blur_row)
+
+        self._corner_radius = QSpinBox()
+        self._corner_radius.setRange(0, 20)
+        self._corner_radius.setSuffix(" px")
+        form.addRow("Corner radius:", self._corner_radius)
+
         return box
 
     # ------------------------------------------------------------------ #
@@ -351,6 +372,10 @@ class SettingsDialog(QDialog):
             if val == self._config.overlay.theme:
                 self._theme.setCurrentIndex(i)
                 break
+        self._blur_cb.setChecked(self._config.overlay.blur_enabled)
+        self._blur_radius.setValue(self._config.overlay.blur_radius)
+        self._blur_radius.setEnabled(self._config.overlay.blur_enabled)
+        self._corner_radius.setValue(self._config.overlay.corner_radius)
         self._autostart_cb.setChecked(is_autostart_enabled())
 
     def _on_save(self) -> None:
@@ -375,6 +400,9 @@ class SettingsDialog(QDialog):
         self._config.overlay.opacity = self._opacity.value()
         self._config.overlay.font_size = self._font_size.value()
         self._config.overlay.theme = THEMES[self._theme.currentIndex()][1]
+        self._config.overlay.blur_enabled = self._blur_cb.isChecked()
+        self._config.overlay.blur_radius = self._blur_radius.value()
+        self._config.overlay.corner_radius = self._corner_radius.value()
 
         save_config(self._config)
         set_autostart(self._autostart_cb.isChecked())

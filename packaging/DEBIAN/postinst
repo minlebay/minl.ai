@@ -4,7 +4,7 @@ set -e
 INSTALL_DIR="/usr/lib/minlai"
 VENV_DIR="$INSTALL_DIR/venv"
 
-echo "Setting up Orbit Python environment…"
+echo "Setting up minl.ai Python environment…"
 
 # Create venv if it doesn't exist yet
 if [ ! -d "$VENV_DIR" ]; then

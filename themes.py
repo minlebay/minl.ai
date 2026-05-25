@@ -2,6 +2,19 @@
 
 from __future__ import annotations
 
+import os
+
+
+def _write_svg(svg: str, name: str) -> str:
+    """Write SVG to /tmp/minlai_{name}.svg — Qt can reference it in url()."""
+    path = f"/tmp/minlai_{name}.svg"
+    try:
+        with open(path, "w") as f:
+            f.write(svg)
+    except OSError:
+        pass
+    return path
+
 # ── Palettes ──────────────────────────────────────────────────────────────────
 
 _DARK: dict[str, str] = {
@@ -32,8 +45,8 @@ _DARK: dict[str, str] = {
     "close_hover_text":  "#fca5a5",
     # Mic button
     "mic_bg":            "rgba(34, 36, 42, 0.90)",
-    "mic_text":          "#6d90a8",
-    "mic_border":        "rgba(72, 92, 112, 0.45)",
+    "mic_text":          "#aabfcc",
+    "mic_border":        "rgba(80, 105, 130, 0.55)",
     "mic_hover":         "rgba(50, 60, 78, 0.85)",
     "mic_rec_bg":        "rgba(155, 28, 28, 0.88)",
     "mic_rec_border":    "#e57373",
@@ -48,18 +61,20 @@ _DARK: dict[str, str] = {
     "retry_text":        "#fdd8b0",
     # Window opacity
     "opacity":           "0.96",
+    # Blur-mode: semi-transparent color overlay drawn on top of blurred desktop
+    "blur_overlay":      "rgba(20, 22, 25, 0.72)",
 }
 
 _LIGHT: dict[str, str] = {
     # Backgrounds
-    "window_bg":         "rgba(244, 246, 250, 0.97)",
+    "window_bg":         "rgba(245, 248, 255, 0.93)",
     "surface":           "rgba(255, 255, 255, 0.95)",
-    "border":            "rgba(175, 185, 200, 0.55)",
-    "border_focus":      "rgba(65, 100, 155, 0.65)",
+    "border":            "rgba(148, 162, 185, 0.80)",
+    "border_focus":      "rgba(55, 95, 160, 0.90)",
     # Text
     "text":              "#18202e",
-    "text_dim":          "#44557a",
-    "text_muted":        "#7a8898",
+    "text_dim":          "#3a4e6a",
+    "text_muted":        "#6a7a8e",
     # Buttons
     "btn":               "rgba(38, 52, 72, 0.90)",
     "btn_hover":         "rgba(22, 36, 56, 0.97)",
@@ -70,17 +85,17 @@ _LIGHT: dict[str, str] = {
     # Chat message labels
     "ai_color":          "#1e4a78",
     "user_color":        "#1454aa",
-    "separator":         "#b8c4d2",
+    "separator":         "#a0aec0",
     "thinking":          "#4070a0",
     "error":             "#c0392b",
     # Close button
     "close_hover_bg":    "rgba(200, 30, 30, 0.12)",
     "close_hover_text":  "#b02020",
     # Mic button
-    "mic_bg":            "rgba(238, 242, 250, 0.95)",
-    "mic_text":          "#1e4a78",
-    "mic_border":        "rgba(140, 162, 192, 0.55)",
-    "mic_hover":         "rgba(218, 228, 244, 0.95)",
+    "mic_bg":            "rgba(228, 235, 248, 0.95)",
+    "mic_text":          "#1a2d44",
+    "mic_border":        "rgba(118, 142, 175, 0.75)",
+    "mic_hover":         "rgba(210, 222, 242, 0.98)",
     "mic_rec_bg":        "rgba(190, 28, 28, 0.88)",
     "mic_rec_border":    "#e74c3c",
     "mic_rec_text":      "#fff5f5",
@@ -94,6 +109,8 @@ _LIGHT: dict[str, str] = {
     "retry_text":        "#fff0e0",
     # Window opacity
     "opacity":           "0.97",
+    # Blur-mode: semi-transparent color overlay drawn on top of blurred desktop
+    "blur_overlay":      "rgba(232, 238, 250, 0.75)",
 }
 
 PALETTES: dict[str, dict[str, str]] = {"dark": _DARK, "light": _LIGHT}
@@ -105,37 +122,12 @@ def get(theme: str) -> dict[str, str]:
 
 # ── Stylesheet builders ───────────────────────────────────────────────────────
 
-def overlay_style(fs: int, theme: str = "dark") -> str:
+def overlay_style(fs: int, theme: str = "dark", blur_bg: bool = False) -> str:
     c = get(theme)
+    central_bg = c['blur_overlay'] if blur_bg else c['window_bg']
     return f"""
         QWidget#central {{
-            background: {c['window_bg']};
-            border: 1px solid {c['border']};
-            border-radius: 12px;
-        }}
-        QWidget#titleBar {{ background: transparent; }}
-        QLabel#titleIcon {{
-            color: {c['title_icon']};
-            font-size: {fs + 4}px;
-            font-weight: bold;
-            padding-right: 4px;
-        }}
-        QLabel#titleLabel {{
-            color: {c['title_text']};
-            font-size: {fs + 2}px;
-            font-weight: bold;
-            letter-spacing: 1px;
-        }}
-        QPushButton#closeBtn {{
-            background: transparent;
-            color: {c['text_dim']};
-            border: none;
-            font-size: {fs}px;
-            border-radius: 4px;
-        }}
-        QPushButton#closeBtn:hover {{
-            background: {c['close_hover_bg']};
-            color: {c['close_hover_text']};
+            background: {central_bg};
         }}
         QTextEdit#chat {{
             background: transparent;
@@ -185,8 +177,7 @@ def overlay_style(fs: int, theme: str = "dark") -> str:
             color: {c['mic_text']};
             border: 1px solid {c['mic_border']};
             border-radius: 6px;
-            font-size: {fs + 2}px;
-            padding: 0;
+            padding: 6px 8px;
         }}
         QPushButton#micBtn:hover {{ background: {c['mic_hover']}; border-color: {c['border_focus']}; }}
         QPushButton#micBtn[recording="true"] {{
@@ -204,13 +195,19 @@ def overlay_style(fs: int, theme: str = "dark") -> str:
 
 def dialog_style(theme: str = "dark") -> str:
     c = get(theme)
-    # URL-encode '#' for inline SVG data URI
-    arrow_color = c['text_dim'].replace('#', '%23')
-    arrow = (
-        f"data:image/svg+xml;utf8,"
+    _td = c['text_dim']
+    arrow = _write_svg(
         f"<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'>"
-        f"<polygon points='0,0 10,0 5,6' fill='{arrow_color}'/>"
-        f"</svg>"
+        f"<polygon points='0,0 10,0 5,6' fill='{_td}'/>"
+        f"</svg>",
+        f"arrow_{theme}"
+    )
+    check = _write_svg(
+        "<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12'>"
+        "<polyline points='2,7 5,10 10,3' stroke='#ffffff' stroke-width='2.2' "
+        "fill='none' stroke-linecap='round' stroke-linejoin='round'/>"
+        "</svg>",
+        "check"
     )
     return f"""
         QDialog {{ background: {c['window_bg']}; color: {c['text']}; }}
@@ -268,6 +265,10 @@ def dialog_style(theme: str = "dark") -> str:
             border: 1px solid {c['border']};
             border-radius: 3px; background: {c['surface']};
         }}
-        QCheckBox::indicator:checked {{ background: {c['btn_send']}; }}
+        QCheckBox::indicator:checked {{
+            background: {c['btn_send_hover']};
+            border-color: {c['border_focus']};
+            image: url("{check}");
+        }}
         QCheckBox::indicator:hover {{ border-color: {c['border_focus']}; }}
     """
