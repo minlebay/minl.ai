@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from typing import Optional
 
-from PyQt6.QtCore import QObject, QThread, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, QThread, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush, QPen
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QMenu,
@@ -16,7 +16,7 @@ import logger as _log
 from ai import MinlAI
 from capture import capture_screenshot, read_clipboard
 from config import Config, PROVIDER_GEMINI
-from voice import transcribe_audio, sounddevice_available
+from voice import transcribe_audio, voice_input_available
 
 _logger = _log.get("tray")
 
@@ -51,6 +51,44 @@ class HotkeyBridge(QObject):
 
 
 # ------------------------------------------------------------------ #
+# Device monitor: polls audio input devices every 3 s
+# ------------------------------------------------------------------ #
+
+class _DeviceMonitor(QObject):
+    device_connected    = pyqtSignal(str, str)   # display_name, source_name
+    device_disconnected = pyqtSignal(str, str)
+
+    def __init__(self, parent: QObject = None) -> None:
+        super().__init__(parent)
+        self._known: dict[str, str] = {}   # source_name → display_name
+        self._timer = QTimer(self)
+        self._timer.setInterval(3000)
+        self._timer.timeout.connect(self._poll)
+
+    def start(self) -> None:
+        import voice as _voice
+        self._known = {src: disp for disp, src in _voice.list_audio_devices()}
+        self._timer.start()
+
+    def stop(self) -> None:
+        self._timer.stop()
+
+    def _poll(self) -> None:
+        import voice as _voice
+        try:
+            current = {src: disp for disp, src in _voice.list_audio_devices()}
+        except Exception:
+            return
+        for src, disp in current.items():
+            if src not in self._known:
+                self.device_connected.emit(disp, src)
+        for src, disp in self._known.items():
+            if src not in current:
+                self.device_disconnected.emit(disp, src)
+        self._known = current
+
+
+# ------------------------------------------------------------------ #
 # Tray icon
 # ------------------------------------------------------------------ #
 
@@ -72,6 +110,12 @@ class MinlTray(QObject):
         self._tray.setContextMenu(self._build_menu())
         self._tray.activated.connect(self._on_tray_activated)
         self._tray.show()
+
+        self._device_monitor = _DeviceMonitor(self)
+        self._device_monitor.device_connected.connect(self._on_mic_connected)
+        self._device_monitor.device_disconnected.connect(self._on_mic_disconnected)
+        self._device_monitor.start()
+
         _logger.info("Tray initialized")
 
     # ------------------------------------------------------------------ #
@@ -163,7 +207,7 @@ class MinlTray(QObject):
         self._capture_worker.start()
 
     def _transcribe_callback(self):
-        if not sounddevice_available():
+        if not voice_input_available():
             return None
         cfg = self._config
         return lambda audio_bytes: transcribe_audio(audio_bytes, cfg)
@@ -226,6 +270,25 @@ class MinlTray(QObject):
             self._tray.setContextMenu(self._build_menu())
             self._restart_hotkeys()
             _logger.info("Settings saved, hotkeys restarted")
+
+    def _on_mic_connected(self, display: str, source: str) -> None:
+        preferred = self._config.overlay.audio_device
+        if preferred and source == preferred:
+            _logger.info("Preferred mic reconnected: %s", source)
+            self._tray.showMessage(
+                "minl.ai", f"Microphone reconnected: {display}",
+                QSystemTrayIcon.MessageIcon.Information, 3000,
+            )
+
+    def _on_mic_disconnected(self, display: str, source: str) -> None:
+        preferred = self._config.overlay.audio_device
+        if preferred and source == preferred:
+            _logger.info("Preferred mic disconnected: %s, fallback to default", source)
+            self._tray.showMessage(
+                "minl.ai",
+                f"Microphone disconnected: {display}\nFalling back to system default.",
+                QSystemTrayIcon.MessageIcon.Warning, 4000,
+            )
 
     def _on_view_logs(self) -> None:
         dlg = _LogViewerDialog(_log.LOG_FILE, self._config.overlay.theme)

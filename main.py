@@ -17,12 +17,12 @@ import logger as _logger
 from config import load_config, PROVIDER_GEMINI
 from capture import capture_screenshot, read_clipboard
 from ai import MinlAI
-from voice import transcribe_audio, sounddevice_available
+from voice import transcribe_audio, voice_input_available
 
 
 def _transcribe_fn(ai: MinlAI):
     """Return transcription callback if sounddevice is available, else None."""
-    if not sounddevice_available():
+    if not voice_input_available():
         return None
     return lambda audio_bytes: transcribe_audio(audio_bytes, ai._config)
 

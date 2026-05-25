@@ -112,6 +112,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._build_model_group())
         layout.addWidget(self._build_hotkeys_group())
         layout.addWidget(self._build_overlay_group())
+        layout.addWidget(self._build_voice_group())
 
         self._autostart_cb = QCheckBox("Launch at login  (adds ~/.config/autostart/minlai.desktop)")
         layout.addWidget(self._autostart_cb)
@@ -283,6 +284,47 @@ class SettingsDialog(QDialog):
 
         return box
 
+    def _build_voice_group(self) -> QGroupBox:
+        box = QGroupBox("Voice Input")
+        form = QFormLayout(box)
+        form.setSpacing(8)
+
+        device_row = QWidget()
+        h = QHBoxLayout(device_row)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(6)
+
+        self._audio_device = QComboBox()
+        self._audio_device.setSizePolicy(
+            self._audio_device.sizePolicy().horizontalPolicy(),
+            self._audio_device.sizePolicy().verticalPolicy(),
+        )
+        self._audio_device.setMinimumWidth(260)
+        h.addWidget(self._audio_device, stretch=1)
+
+        refresh_btn = QPushButton("↺")
+        refresh_btn.setFixedWidth(32)
+        refresh_btn.setToolTip("Refresh device list")
+        refresh_btn.clicked.connect(self._refresh_audio_devices)
+        h.addWidget(refresh_btn)
+
+        form.addRow("Recording device:", device_row)
+        self._refresh_audio_devices()
+        return box
+
+    def _refresh_audio_devices(self) -> None:
+        import voice as _voice
+        current = self._audio_device.currentData() or ""
+        self._audio_device.blockSignals(True)
+        self._audio_device.clear()
+        self._audio_device.addItem("System default", "")
+        for disp, src in _voice.list_audio_devices():
+            self._audio_device.addItem(disp, src)
+        # Restore selection
+        idx = self._audio_device.findData(current)
+        self._audio_device.setCurrentIndex(idx if idx >= 0 else 0)
+        self._audio_device.blockSignals(False)
+
     # ------------------------------------------------------------------ #
     # Style
     # ------------------------------------------------------------------ #
@@ -376,6 +418,8 @@ class SettingsDialog(QDialog):
         self._blur_radius.setValue(self._config.overlay.blur_radius)
         self._blur_radius.setEnabled(self._config.overlay.blur_enabled)
         self._corner_radius.setValue(self._config.overlay.corner_radius)
+        idx = self._audio_device.findData(self._config.overlay.audio_device)
+        self._audio_device.setCurrentIndex(idx if idx >= 0 else 0)
         self._autostart_cb.setChecked(is_autostart_enabled())
 
     def _on_save(self) -> None:
@@ -403,6 +447,7 @@ class SettingsDialog(QDialog):
         self._config.overlay.blur_enabled = self._blur_cb.isChecked()
         self._config.overlay.blur_radius = self._blur_radius.value()
         self._config.overlay.corner_radius = self._corner_radius.value()
+        self._config.overlay.audio_device = self._audio_device.currentData() or ""
 
         save_config(self._config)
         set_autostart(self._autostart_cb.isChecked())

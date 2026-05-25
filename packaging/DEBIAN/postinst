@@ -19,7 +19,9 @@ fi
     "google-genai>=1.0.0" \
     "pynput>=1.7.6" \
     "sounddevice>=0.4.6" \
-    "numpy>=1.24.0"
+    "numpy>=1.24.0" \
+    "markdown>=3.4.0" \
+    "Pygments>=2.14.0"
 
 # If running Python < 3.11, also install tomli for TOML parsing
 python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)" \

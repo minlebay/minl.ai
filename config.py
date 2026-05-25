@@ -90,6 +90,7 @@ class OverlayConfig:
     blur_enabled: bool = False
     blur_radius: int = 10
     corner_radius: int = 0
+    audio_device: str = ""   # PulseAudio source name; empty = system default
 
 
 @dataclass
@@ -151,6 +152,7 @@ def save_config(config: Config) -> None:
         f"blur_enabled   = {'true' if config.overlay.blur_enabled else 'false'}",
         f"blur_radius    = {config.overlay.blur_radius}",
         f"corner_radius  = {config.overlay.corner_radius}",
+        f'audio_device   = "{config.overlay.audio_device}"',
         "",
     ]
     CONFIG_FILE.write_text("\n".join(lines))
@@ -200,6 +202,7 @@ def load_config() -> Config:
             theme=overlay_raw.get("theme", "dark"),
             blur_enabled=bool(overlay_raw.get("blur_enabled", False)),
             blur_radius=int(overlay_raw.get("blur_radius", 10)),
-            corner_radius=int(overlay_raw.get("corner_radius", 12)),
+            corner_radius=int(overlay_raw.get("corner_radius", 0)),
+            audio_device=str(overlay_raw.get("audio_device", "")),
         ),
     )

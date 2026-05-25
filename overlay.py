@@ -10,7 +10,7 @@ from typing import Callable, Optional
 from PyQt6.QtCore import Qt, QRectF, QSize, QThread, pyqtSignal, QObject
 from PyQt6.QtGui import (
     QColor, QIcon, QKeySequence, QPainter, QPen,
-    QPixmap, QShortcut, QTextCursor,
+    QPixmap, QShortcut, QTextCursor, QTextDocument,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -31,6 +31,57 @@ APP_NAME = "minl.ai"
 
 _RGBA_RE = re.compile(r'rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)')
 _HEX_RE  = re.compile(r'#([0-9a-fA-F]{6})')
+
+
+def _syntax_highlight(html: str, theme: str) -> str:
+    """Replace fenced code blocks with Pygments inline-styled HTML."""
+    import re
+    import html as _html_lib
+    try:
+        from pygments import highlight
+        from pygments.lexers import get_lexer_by_name, TextLexer
+        from pygments.formatters import HtmlFormatter
+    except ImportError:
+        return html
+
+    style = "monokai" if theme == "dark" else "friendly"
+    fmt = HtmlFormatter(inline_styles=True, nowrap=True)
+    bg = "#1a1c1f" if theme == "dark" else "#f0f2f7"
+    border = "rgba(72,78,88,0.6)" if theme == "dark" else "rgba(148,162,185,0.8)"
+
+    def _hilite(m: re.Match) -> str:
+        lang = (m.group(1) or "").strip()
+        code = _html_lib.unescape(m.group(2))
+        try:
+            lexer = get_lexer_by_name(lang, stripall=True) if lang else TextLexer()
+        except Exception:
+            lexer = TextLexer()
+        highlighted = highlight(code, lexer, fmt).rstrip()
+        return (
+            f'<pre style="background:{bg};padding:8px 12px;'
+            f'border:1px solid {border};border-radius:4px;'
+            f'font-family:monospace;margin:4px 0">'
+            f'<code>{highlighted}</code></pre>'
+        )
+
+    return re.sub(
+        r'<pre><code(?:\s+class="language-([^"]*)")?>(.*?)</code></pre>',
+        _hilite,
+        html,
+        flags=re.DOTALL,
+    )
+
+
+def _md_to_html(text: str, theme: str = "dark") -> str:
+    """Convert Markdown to HTML with optional syntax highlighting."""
+    try:
+        import markdown as _md
+        html = _md.markdown(text, extensions=["fenced_code", "tables"])
+        return _syntax_highlight(html, theme)
+    except ImportError:
+        doc = QTextDocument()
+        doc.setMarkdown(text)
+        return doc.toHtml()
 
 
 def _parse_rgba(s: str) -> QColor:
@@ -322,12 +373,20 @@ class MinlOverlay(QMainWindow):
     def _append_message(self, role: str, text: str) -> None:
         c = self._c()
         color = c["ai_color"] if role == APP_NAME else c["user_color"]
-        self._chat.append(
-            f'<span style="color:{color};font-weight:bold">{role}</span>'
+        header = (
+            f'<b><span style="color:{color}">{role}</span></b>'
             f'<span style="color:{c["separator"]}"> ▸ </span>'
-            f'<span style="color:{c["text"]}">{_escape_html(text)}</span>'
-            "<br>"
         )
+        if role == APP_NAME:
+            body = _md_to_html(text, self._config.theme)
+        else:
+            body = f'<span style="color:{c["text"]}">{_escape_html(text)}</span>'
+
+        cursor = self._chat.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        if not self._chat.document().isEmpty():
+            cursor.insertBlock()
+        cursor.insertHtml(header + body)
         self._chat.moveCursor(QTextCursor.MoveOperation.End)
 
     def _set_loading(self) -> None:
@@ -375,7 +434,13 @@ class MinlOverlay(QMainWindow):
     def _on_worker_result(self, text: str) -> None:
         self._remove_last_para()
         self._retry_btn.setVisible(False)
+        scroll_to = self._chat.document().characterCount() - 1
         self._append_message(APP_NAME, text)
+        # Scroll to start of new response so user reads from the top
+        cursor = QTextCursor(self._chat.document())
+        cursor.setPosition(max(0, scroll_to))
+        self._chat.setTextCursor(cursor)
+        self._chat.ensureCursorVisible()
 
     def _on_worker_error(self, msg: str) -> None:
         import logger as _log
@@ -409,11 +474,12 @@ class MinlOverlay(QMainWindow):
 
     def _start_recording(self) -> None:
         import voice as _voice
-        if not _voice.sounddevice_available():
-            self._set_error("sounddevice not installed. Run: pip install sounddevice")
+        device = self._config.audio_device
+        if _voice.is_muted(device):
+            self._set_error("Microphone is muted. Unmute it in system audio settings.")
             return
         try:
-            self._recorder = _voice.VoiceRecorder()
+            self._recorder = _voice.VoiceRecorder(device=device)
             self._recorder.start()
         except Exception as exc:
             import logger as _log
