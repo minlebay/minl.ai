@@ -36,7 +36,7 @@ provider = "anthropic"
 # anthropic_api_key = "sk-ant-..."
 # gemini_api_key    = "AIza..."
 model = "claude-sonnet-4-6"
-max_tokens = 2048
+max_tokens = 8192
 language = "auto"
 stt_model = "gemini-2.5-flash"
 
@@ -68,7 +68,7 @@ class ApiConfig:
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
     model: str = "claude-sonnet-4-6"
-    max_tokens: int = 2048
+    max_tokens: int = 8192
     language: str = "auto"
     stt_model: str = "gemini-2.5-flash"
 

@@ -242,6 +242,8 @@ class MinlOverlay(QMainWindow):
         self._voice_worker: Optional[_VoiceWorker] = None
         self._recorder = None
         self._last_fn: Optional[Callable[[], str]] = None
+        self._message_history: list[tuple[str, str]] = []
+        self._is_loading: bool = False
 
         self._build_ui()
         self._apply_style()
@@ -370,36 +372,47 @@ class MinlOverlay(QMainWindow):
     def _c(self) -> dict[str, str]:
         return themes.get(self._config.theme)
 
-    def _append_message(self, role: str, text: str) -> None:
+    def _rebuild_chat_html(self) -> None:
         c = self._c()
-        color = c["ai_color"] if role == APP_NAME else c["user_color"]
-        header = (
-            f'<b><span style="color:{color}">{role}</span></b>'
-            f'<span style="color:{c["separator"]}"> ▸ </span>'
-        )
-        if role == APP_NAME:
-            body = _md_to_html(text, self._config.theme)
-        else:
-            body = f'<span style="color:{c["text"]}">{_escape_html(text)}</span>'
+        parts: list[str] = []
+        for role, text in self._message_history:
+            if role == "_error":
+                parts.append(
+                    f'<div style="margin:0 0 8px 0">'
+                    f'<span style="color:{c["error"]}">Error: {_escape_html(text)}</span>'
+                    f'</div>'
+                )
+            else:
+                color = c["ai_color"] if role == APP_NAME else c["user_color"]
+                header = (
+                    f'<b><span style="color:{color}">{role}</span></b>'
+                    f'<span style="color:{c["separator"]}"> ▸ </span>'
+                )
+                if role == APP_NAME:
+                    body = _md_to_html(text, self._config.theme)
+                else:
+                    body = f'<span style="color:{c["text"]}">{_escape_html(text)}</span>'
+                parts.append(f'<div style="margin:0 0 8px 0">{header}{body}</div>')
+        if self._is_loading:
+            parts.append(
+                f'<div><span style="color:{c["thinking"]};font-style:italic">Thinking…</span></div>'
+            )
+        self._chat.setHtml(''.join(parts) if parts else '')
 
-        cursor = self._chat.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        if not self._chat.document().isEmpty():
-            cursor.insertBlock()
-        cursor.insertHtml(header + body)
+    def _append_message(self, role: str, text: str) -> None:
+        self._message_history.append((role, text))
+        self._rebuild_chat_html()
         self._chat.moveCursor(QTextCursor.MoveOperation.End)
 
     def _set_loading(self) -> None:
-        c = self._c()
-        self._chat.setHtml(
-            f'<span style="color:{c["thinking"]};font-style:italic">Thinking…</span>'
-        )
+        self._is_loading = True
+        self._rebuild_chat_html()
+        self._chat.moveCursor(QTextCursor.MoveOperation.End)
 
     def _set_error(self, msg: str) -> None:
-        c = self._c()
-        self._chat.append(
-            f'<span style="color:{c["error"]}">Error: {_escape_html(msg)}</span><br>'
-        )
+        self._message_history.append(("_error", msg))
+        self._rebuild_chat_html()
+        self._chat.moveCursor(QTextCursor.MoveOperation.End)
 
     # ------------------------------------------------------------------ #
     # Send / receive
@@ -425,28 +438,23 @@ class MinlOverlay(QMainWindow):
         self._worker.start()
 
     def _on_worker_started(self) -> None:
-        c = self._c()
-        self._chat.append(
-            f'<span style="color:{c["thinking"]};font-style:italic">Thinking…</span><br>'
-        )
+        self._is_loading = True
+        self._rebuild_chat_html()
         self._chat.moveCursor(QTextCursor.MoveOperation.End)
 
     def _on_worker_result(self, text: str) -> None:
-        self._remove_last_para()
+        self._is_loading = False
         self._retry_btn.setVisible(False)
-        scroll_to = self._chat.document().characterCount() - 1
-        self._append_message(APP_NAME, text)
-        # Scroll to start of new response so user reads from the top
-        cursor = QTextCursor(self._chat.document())
-        cursor.setPosition(max(0, scroll_to))
-        self._chat.setTextCursor(cursor)
-        self._chat.ensureCursorVisible()
+        self._message_history.append((APP_NAME, text))
+        self._rebuild_chat_html()
+        self._chat.moveCursor(QTextCursor.MoveOperation.End)
 
     def _on_worker_error(self, msg: str) -> None:
         import logger as _log
         _log.get("overlay").error("AI error: %s", msg)
-        self._remove_last_para()
-        self._set_error(msg)
+        self._is_loading = False
+        self._message_history.append(("_error", msg))
+        self._rebuild_chat_html()
         self._retry_btn.setVisible(True)
 
     def _on_worker_done(self) -> None:
@@ -456,6 +464,8 @@ class MinlOverlay(QMainWindow):
         if self._last_fn is None or self._worker is not None:
             return
         self._retry_btn.setVisible(False)
+        self._message_history.clear()
+        self._is_loading = False
         self._chat.clear()
         self._start_worker(self._last_fn)
 
@@ -531,25 +541,21 @@ class MinlOverlay(QMainWindow):
         self._mic_btn.style().unpolish(self._mic_btn)
         self._mic_btn.style().polish(self._mic_btn)
 
-    def _remove_last_para(self) -> None:
-        cursor = self._chat.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
-        cursor.removeSelectedText()
-        cursor.deletePreviousChar()
-
     # ------------------------------------------------------------------ #
     # Public: push initial AI response once it arrives
     # ------------------------------------------------------------------ #
 
     def show_response(self, text: str) -> None:
         self._retry_btn.setVisible(False)
-        self._chat.clear()
-        self._append_message(APP_NAME, text)
+        self._is_loading = False
+        self._message_history = [(APP_NAME, text)]
+        self._rebuild_chat_html()
+        self._chat.moveCursor(QTextCursor.MoveOperation.Start)
 
     def show_error(self, msg: str) -> None:
-        self._chat.clear()
-        self._set_error(msg)
+        self._is_loading = False
+        self._message_history = [("_error", msg)]
+        self._rebuild_chat_html()
         self._retry_btn.setVisible(True)
 
 
