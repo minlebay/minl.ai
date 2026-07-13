@@ -204,6 +204,35 @@ def overlay_style(fs: int, theme: str = "dark", blur_bg: bool = False) -> str:
             color: {c['btn_disabled_text']};
             border-color: {c['border']};
         }}
+        QPushButton#attachBtn {{
+            background: {c['mic_bg']};
+            color: {c['mic_text']};
+            border: 1px solid {c['mic_border']};
+            border-radius: 6px;
+            padding: 6px 8px;
+        }}
+        QPushButton#attachBtn:hover {{ background: {c['mic_hover']}; border-color: {c['border_focus']}; }}
+        QWidget#attachChip {{
+            background: {c['surface']};
+            border: 1px solid {c['border']};
+            border-radius: 10px;
+        }}
+        QLabel#attachChipLabel {{
+            color: {c['text_dim']};
+            font-size: {max(fs - 2, 9)}px;
+        }}
+        QPushButton#attachChipRemoveBtn {{
+            background: transparent;
+            color: {c['text_muted']};
+            border: none;
+            border-radius: 8px;
+            padding: 0px;
+            font-size: {max(fs - 3, 8)}px;
+        }}
+        QPushButton#attachChipRemoveBtn:hover {{
+            background: {c['close_hover_bg']};
+            color: {c['close_hover_text']};
+        }}
     """
 
 

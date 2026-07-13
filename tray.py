@@ -217,7 +217,7 @@ class MinlTray(QObject):
         from overlay import show_overlay
         overlay = show_overlay(
             config=self._config.overlay,
-            on_follow_up=self._ai.follow_up,
+            on_follow_up=self._ai.follow_up_with_attachments,
             on_transcribe=self._transcribe_callback(),
             initial_fn=lambda: self._ai.ask_screenshot(image_bytes),
         )
@@ -253,7 +253,7 @@ class MinlTray(QObject):
         from overlay import show_overlay
         overlay = show_overlay(
             config=self._config.overlay,
-            on_follow_up=self._ai.follow_up,
+            on_follow_up=self._ai.follow_up_with_attachments,
             on_transcribe=self._transcribe_callback(),
             initial_fn=lambda: self._ai.ask_text(text, system=system),
         )

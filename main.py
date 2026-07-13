@@ -67,7 +67,7 @@ def run_screenshot_mode(ai: MinlAI, headless: bool = False) -> None:
         from overlay import run_overlay
         run_overlay(
             config=ai._config.overlay,
-            on_follow_up=ai.follow_up,
+            on_follow_up=ai.follow_up_with_attachments,
             on_transcribe=_transcribe_fn(ai),
             initial_fn=lambda: ai.ask_screenshot(image_bytes),
         )
@@ -99,7 +99,7 @@ def run_text_mode(ai: MinlAI, headless: bool = False) -> None:
         from overlay import run_overlay
         run_overlay(
             config=ai._config.overlay,
-            on_follow_up=ai.follow_up,
+            on_follow_up=ai.follow_up_with_attachments,
             on_transcribe=_transcribe_fn(ai),
             initial_fn=lambda: ai.ask_text(text, system=system),
         )

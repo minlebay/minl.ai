@@ -7,14 +7,16 @@ import sys
 import threading
 from typing import Callable, Optional
 
-from PyQt6.QtCore import Qt, QRectF, QSize, QThread, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, QBuffer, QIODevice, QRectF, QSize, QThread, pyqtSignal, QObject
 from PyQt6.QtGui import (
-    QColor, QIcon, QKeySequence, QPainter, QPen,
+    QColor, QIcon, QImage, QKeySequence, QPainter, QPen,
     QPixmap, QShortcut, QTextCursor, QTextDocument,
 )
 from PyQt6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMainWindow,
     QPushButton,
@@ -25,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 import themes
+from ai import Attachment
 from config import OverlayConfig
 
 APP_NAME = "minl.ai"
@@ -163,6 +166,22 @@ def _paint_stop_icon(size: int, color: QColor) -> QPixmap:
     return pix
 
 
+class _InputLineEdit(QLineEdit):
+    """QLineEdit that intercepts Ctrl+V to grab pasted images instead of garbling them as text."""
+
+    image_pasted = pyqtSignal(QImage)
+
+    def keyPressEvent(self, event) -> None:
+        if event.matches(QKeySequence.StandardKey.Paste):
+            mime = QApplication.clipboard().mimeData()
+            if mime.hasImage():
+                image = QApplication.clipboard().image()
+                if not image.isNull():
+                    self.image_pasted.emit(image)
+                    return
+        super().keyPressEvent(event)
+
+
 class _CentralWidget(QWidget):
     """Central widget with paintEvent override so Qt stylesheet background: renders."""
 
@@ -229,7 +248,7 @@ class MinlOverlay(QMainWindow):
     def __init__(
         self,
         config: OverlayConfig,
-        on_follow_up: Callable[[str], str],
+        on_follow_up: Callable[[str, list[Attachment]], str],
         on_transcribe: Optional[Callable[[bytes], str]] = None,
         initial_response: str = "",
         loading: bool = False,
@@ -244,6 +263,7 @@ class MinlOverlay(QMainWindow):
         self._last_fn: Optional[Callable[[], str]] = None
         self._message_history: list[tuple[str, str]] = []
         self._is_loading: bool = False
+        self._pending_attachments: list[Attachment] = []
 
         self._build_ui()
         self._apply_style()
@@ -278,6 +298,14 @@ class MinlOverlay(QMainWindow):
         self._chat.setObjectName("chat")
         layout.addWidget(self._chat, stretch=1)
 
+        # Pending-attachment chips (hidden until something is attached)
+        self._attach_row = QWidget()
+        self._attach_layout = QHBoxLayout(self._attach_row)
+        self._attach_layout.setContentsMargins(0, 0, 0, 0)
+        self._attach_layout.setSpacing(6)
+        self._attach_row.setVisible(False)
+        layout.addWidget(self._attach_row)
+
         # Input row
         input_row = self._build_input_row()
         layout.addWidget(input_row)
@@ -292,11 +320,19 @@ class MinlOverlay(QMainWindow):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(6)
 
-        self._input = QLineEdit()
+        self._input = _InputLineEdit()
         self._input.setObjectName("inputField")
         self._input.setPlaceholderText("Ask a follow-up question…")
         self._input.returnPressed.connect(self._on_send)
+        self._input.image_pasted.connect(self._on_image_pasted)
         h.addWidget(self._input, stretch=1)
+
+        # Attach button — opens a file picker for images/PDFs/text files
+        self._attach_btn = QPushButton("📎")
+        self._attach_btn.setObjectName("attachBtn")
+        self._attach_btn.setToolTip("Add attachment (image, PDF, or text file)")
+        self._attach_btn.clicked.connect(self._on_attach_clicked)
+        h.addWidget(self._attach_btn)
 
         # Mic button — only shown when a transcribe callback is provided
         self._mic_btn: Optional[QPushButton] = None
@@ -328,6 +364,92 @@ class MinlOverlay(QMainWindow):
             x = (geo.width() - self._config.width) // 2
             y = (geo.height() - self._config.height) // 2
             self.move(geo.x() + x, geo.y() + y)
+
+    # ------------------------------------------------------------------ #
+    # Attachments (clipboard-pasted images, file picker)
+    # ------------------------------------------------------------------ #
+
+    _MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+    def _on_image_pasted(self, image: QImage) -> None:
+        buf = QBuffer()
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buf, "PNG")
+        data = bytes(buf.data())
+        buf.close()
+        n = sum(1 for a in self._pending_attachments if a.filename.startswith("clipboard-")) + 1
+        self._add_attachment(Attachment(data=data, mime_type="image/png", filename=f"clipboard-{n}.png"))
+
+    def _on_attach_clicked(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Add attachment",
+            "",
+            "Supported files (*.png *.jpg *.jpeg *.gif *.webp *.bmp *.pdf *.txt *.md *.csv *.json *.py *.log);;"
+            "All files (*)",
+        )
+        for path in paths:
+            self._attach_file(path)
+
+    def _attach_file(self, path: str) -> None:
+        import mimetypes
+        import os
+
+        name = os.path.basename(path)
+        try:
+            if os.path.getsize(path) > self._MAX_ATTACHMENT_BYTES:
+                self._set_error(f"{name}: file too large (max 20 MB)")
+                return
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError as exc:
+            self._set_error(f"Could not read {name}: {exc}")
+            return
+        mime_type = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        self._add_attachment(Attachment(data=data, mime_type=mime_type, filename=name))
+
+    def _add_attachment(self, attachment: Attachment) -> None:
+        self._pending_attachments.append(attachment)
+        self._refresh_attach_row()
+
+    def _remove_attachment(self, attachment: Attachment) -> None:
+        if attachment in self._pending_attachments:
+            self._pending_attachments.remove(attachment)
+        self._refresh_attach_row()
+
+    def _refresh_attach_row(self) -> None:
+        while self._attach_layout.count():
+            item = self._attach_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        for attachment in self._pending_attachments:
+            self._attach_layout.addWidget(self._build_chip(attachment))
+        self._attach_layout.addStretch(1)
+        self._attach_row.setVisible(bool(self._pending_attachments))
+
+    def _build_chip(self, attachment: Attachment) -> QWidget:
+        chip = QWidget()
+        chip.setObjectName("attachChip")
+        h = QHBoxLayout(chip)
+        h.setContentsMargins(8, 2, 4, 2)
+        h.setSpacing(4)
+        if attachment.mime_type.startswith("image/"):
+            icon = "🖼"
+        elif attachment.mime_type == "application/pdf":
+            icon = "📄"
+        else:
+            icon = "📎"
+        label = QLabel(f"{icon} {attachment.filename}")
+        label.setObjectName("attachChipLabel")
+        h.addWidget(label)
+        remove_btn = QPushButton("✕")
+        remove_btn.setObjectName("attachChipRemoveBtn")
+        remove_btn.setFixedSize(16, 16)
+        remove_btn.setToolTip("Remove attachment")
+        remove_btn.clicked.connect(lambda: self._remove_attachment(attachment))
+        h.addWidget(remove_btn)
+        return chip
 
     # ------------------------------------------------------------------ #
     # Style
@@ -420,13 +542,22 @@ class MinlOverlay(QMainWindow):
 
     def _on_send(self) -> None:
         question = self._input.text().strip()
-        if not question or self._worker is not None:
+        if (not question and not self._pending_attachments) or self._worker is not None:
             return
+
+        attachments = self._pending_attachments
+        self._pending_attachments = []
+        self._refresh_attach_row()
 
         self._retry_btn.setVisible(False)
         self._input.clear()
-        self._append_message("You", question)
-        self._start_worker(lambda: self._on_follow_up(question))
+        display = question
+        if attachments:
+            names = ", ".join(a.filename for a in attachments)
+            display = f"{question}\n📎 {names}" if question else f"📎 {names}"
+        self._append_message("You", display)
+        sent_text = question or "What do you see in the attached file(s)? Describe it concisely and helpfully."
+        self._start_worker(lambda: self._on_follow_up(sent_text, attachments))
 
     def _start_worker(self, fn: Callable[[], str]) -> None:
         self._last_fn = fn

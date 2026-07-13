@@ -3,9 +3,36 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import dataclass
 from typing import Optional
 
 from config import Config, PROVIDER_GEMINI
+
+
+@dataclass
+class Attachment:
+    """A user-provided file (pasted image or attached via file picker)."""
+
+    data: bytes
+    mime_type: str
+    filename: str = "attachment"
+
+
+def _decode_as_text(att: Attachment) -> str:
+    try:
+        return att.data.decode("utf-8")
+    except UnicodeDecodeError:
+        return f"[Unable to read {att.filename}: unsupported binary format]"
+
+
+def _anthropic_block(att: Attachment) -> dict:
+    if att.mime_type.startswith("image/"):
+        b64 = base64.standard_b64encode(att.data).decode()
+        return {"type": "image", "source": {"type": "base64", "media_type": att.mime_type, "data": b64}}
+    if att.mime_type == "application/pdf":
+        b64 = base64.standard_b64encode(att.data).decode()
+        return {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}}
+    return {"type": "text", "text": f"--- {att.filename} ---\n{_decode_as_text(att)}"}
 
 
 # ── Anthropic backend ─────────────────────────────────────────────────────────
@@ -52,6 +79,30 @@ class _AnthropicBackend:
                 "text": prompt or "What do you see in this screenshot? Describe it concisely and helpfully.",
             },
         ]
+        self._history.append({"role": "user", "content": content})
+        kwargs: dict = {
+            "model": self._model,
+            "max_tokens": self._max_tokens,
+            "messages": self._history,
+        }
+        if system:
+            kwargs["system"] = system
+        response = self._client.messages.create(**kwargs)
+        reply = response.content[0].text
+        self._history.append({"role": "assistant", "content": reply})
+        return reply
+
+    def send_message(
+        self, text: str, attachments: Optional[list[Attachment]] = None, system: str = ""
+    ) -> str:
+        attachments = attachments or []
+        if attachments:
+            content: list[dict] | str = [
+                *(_anthropic_block(att) for att in attachments),
+                {"type": "text", "text": text},
+            ]
+        else:
+            content = text
         self._history.append({"role": "user", "content": content})
         kwargs: dict = {
             "model": self._model,
@@ -115,6 +166,21 @@ class _GeminiBackend:
         response = chat.send_message(parts)
         return response.text
 
+    def send_message(
+        self, text: str, attachments: Optional[list[Attachment]] = None, system: str = ""
+    ) -> str:
+        from google.genai import types
+        chat = self._get_chat(system)
+        parts: list = []
+        for att in attachments or []:
+            if att.mime_type.startswith("image/") or att.mime_type == "application/pdf":
+                parts.append(types.Part.from_bytes(data=att.data, mime_type=att.mime_type))
+            else:
+                parts.append(f"--- {att.filename} ---\n{_decode_as_text(att)}")
+        parts.append(text)
+        response = chat.send_message(parts)
+        return response.text
+
 
 # ── Public facade ─────────────────────────────────────────────────────────────
 
@@ -151,6 +217,9 @@ class MinlAI:
 
     def follow_up(self, question: str) -> str:
         return self._backend.send_text(question)
+
+    def follow_up_with_attachments(self, question: str, attachments: list[Attachment]) -> str:
+        return self._backend.send_message(question, attachments)
 
     @property
     def has_context(self) -> bool:
