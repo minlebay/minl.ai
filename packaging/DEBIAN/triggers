@@ -1,0 +1,2 @@
+# Rebuild the venv when the system Python is upgraded (postinst "triggered").
+interest-noawait /usr/bin/python3

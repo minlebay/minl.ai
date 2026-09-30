@@ -27,7 +27,7 @@ sed -i "s/^Version:.*/Version: $VERSION/" "$PKG_ROOT/DEBIAN/control"
 # ── Install Python source files ───────────────────────────────────────────────
 DEST="$PKG_ROOT/usr/lib/minlai"
 mkdir -p "$DEST"
-for py in main.py capture.py ai.py overlay.py tray.py settings_dialog.py config.py themes.py voice.py logger.py version.py; do
+for py in main.py capture.py ai.py overlay.py tray.py settings_dialog.py config.py themes.py voice.py logger.py version.py session.py; do
     install -m 644 "$SCRIPT_DIR/$py" "$DEST/"
 done
 install -m 644 "$SCRIPT_DIR/VERSION" "$DEST/"

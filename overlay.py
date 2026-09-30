@@ -739,6 +739,7 @@ def run_overlay(
     initial_fn: Optional[Callable[[], str]] = None,
 ) -> None:
     """Create QApplication (if needed), show overlay, run event loop."""
-    app = QApplication.instance() or QApplication(sys.argv)
+    from session import qt_argv
+    app = QApplication.instance() or QApplication(qt_argv(sys.argv))
     show_overlay(config, on_follow_up, on_transcribe, initial_fn)
     app.exec()

@@ -3,29 +3,53 @@ set -e
 
 INSTALL_DIR="/usr/lib/minlai"
 VENV_DIR="$INSTALL_DIR/venv"
+PY_VER="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
 
-echo "Setting up minl.ai Python environment…"
+# A venv is bound to the Python minor version it was created with: after a
+# release upgrade (e.g. 3.12 → 3.14) the new interpreter can't see the old
+# site-packages, so the venv has to be rebuilt from scratch.
+venv_is_stale() {
+    [ -d "$VENV_DIR" ] && [ ! -d "$VENV_DIR/lib/python$PY_VER" ]
+}
 
-# Create venv if it doesn't exist yet
-if [ ! -d "$VENV_DIR" ]; then
-    python3 -m venv "$VENV_DIR"
+setup_venv() {
+    if venv_is_stale; then
+        echo "System Python is now $PY_VER — rebuilding the minl.ai venv…"
+        rm -rf "$VENV_DIR"
+    fi
+
+    # Create venv if it doesn't exist yet
+    if [ ! -d "$VENV_DIR" ]; then
+        python3 -m venv "$VENV_DIR" || { rm -rf "$VENV_DIR"; return 1; }
+    fi
+
+    # Install / upgrade pip dependencies into the venv
+    # PyQt6 is installed here rather than via apt to work on all distro versions
+    "$VENV_DIR/bin/pip" install --quiet --upgrade \
+        "PyQt6>=6.6.0" \
+        "anthropic>=0.40.0" \
+        "google-genai>=1.0.0" \
+        "pynput>=1.7.6" \
+        "sounddevice>=0.4.6" \
+        "numpy>=1.24.0" \
+        "markdown>=3.4.0" \
+        "Pygments>=2.14.0" || return 1
+
+    # If running Python < 3.11, also install tomli for TOML parsing
+    python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)" \
+        || "$VENV_DIR/bin/pip" install --quiet "tomli>=2.0.1" || return 1
+}
+
+if [ "$1" = "triggered" ]; then
+    # /usr/bin/python3 changed (see DEBIAN/triggers). Rebuild only if the minor
+    # version actually moved, and never fail the surrounding apt run over it.
+    venv_is_stale || exit 0
+    setup_venv || echo "minl.ai: venv rebuild failed; run 'sudo dpkg-reconfigure minlai' later." >&2
+    exit 0
 fi
 
-# Install / upgrade pip dependencies into the venv
-# PyQt6 is installed here rather than via apt to work on all distro versions
-"$VENV_DIR/bin/pip" install --quiet --upgrade \
-    "PyQt6>=6.6.0" \
-    "anthropic>=0.40.0" \
-    "google-genai>=1.0.0" \
-    "pynput>=1.7.6" \
-    "sounddevice>=0.4.6" \
-    "numpy>=1.24.0" \
-    "markdown>=3.4.0" \
-    "Pygments>=2.14.0"
-
-# If running Python < 3.11, also install tomli for TOML parsing
-python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)" \
-    || "$VENV_DIR/bin/pip" install --quiet "tomli>=2.0.1"
+echo "Setting up minl.ai Python environment…"
+setup_venv
 
 # Copy icon to hicolor theme
 if [ -f "$INSTALL_DIR/minlai.svg" ]; then

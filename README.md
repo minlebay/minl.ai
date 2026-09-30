@@ -2,7 +2,7 @@
 
 Lightweight system-wide AI assistant for KDE/Linux. Trigger via hotkey to analyze screen regions or selected text, powered by Anthropic Claude or Google Gemini.
 
-![Platform](https://img.shields.io/badge/platform-Linux%20%2F%20X11-blue)
+![Platform](https://img.shields.io/badge/platform-Linux%20%2F%20X11%20%2F%20Wayland-blue)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -64,6 +64,8 @@ minlai --text --headless
 | Clipboard / selection | `Ctrl+Shift+S` |
 
 Hotkeys are fully configurable in Settings (pynput format, e.g. `<alt>+<shift>+a`).
+On X11 they are handled by pynput; on Wayland they are registered as KDE global
+shortcuts and also appear in System Settings → Shortcuts → minl.ai.
 
 ## Requirements
 
@@ -72,7 +74,8 @@ Hotkeys are fully configurable in Settings (pynput format, e.g. `<alt>+<shift>+a
 | Python 3.11+ | runtime |
 | `libportaudio2` | voice recording (installed by deb) |
 | `flameshot` **or** `kde-spectacle` | screenshot capture |
-| `xclip` or `xsel` | clipboard reading |
+| `xclip` or `xsel` | clipboard reading (X11) |
+| `wl-clipboard` | clipboard reading (Wayland) |
 
 PyQt6, anthropic, google-genai, pynput, sounddevice, numpy — installed automatically into the venv by `postinst`.
 
@@ -134,7 +137,8 @@ theme     = "dark"              # "dark" or "light"
 ```text
 minl.ai/
   main.py             — entry point, CLI flags, tray mode launcher
-  capture.py          — flameshot/spectacle screenshot + xclip/xsel clipboard
+  capture.py          — flameshot/spectacle screenshot + wl-paste/xclip/xsel clipboard
+  session.py          — X11 / Wayland session detection
   ai.py               — AnthropicBackend + GeminiBackend + MinlAI facade
   overlay.py          — PyQt6 floating overlay window
   tray.py             — QSystemTrayIcon, hotkey bridge, log viewer, capture worker
@@ -151,8 +155,13 @@ minl.ai/
 
 ## Notes
 
-- Targets **X11 / XWayland** — pynput global hotkeys do not work on pure Wayland
-- `DISPLAY` must be set (it is by default in any graphical session)
+- Works on **X11** and **KDE Plasma Wayland**. On Wayland the Qt windows run through
+  XWayland (for always-on-top, centering, opacity and blur), hotkeys go through KDE's
+  kglobalaccel and the selection is read with `wl-paste`. On other Wayland desktops, bind
+  `minlai --screenshot` / `minlai --text` to custom shortcuts instead
+- `DISPLAY` must be set (it is by default in any graphical session, XWayland included)
+- The deb's venv is tied to the system Python version; it is rebuilt automatically when
+  Python is upgraded, or manually with `sudo dpkg-reconfigure minlai`
 - Autostart uses XDG (`~/.config/autostart/minlai.desktop`), compatible with KDE, GNOME, XFCE
 - Logs are written to `~/.config/minlai/minlai.log` (2 MB rotating, 1 backup)
 - Voice input requires a Gemini API key even if the main provider is Anthropic

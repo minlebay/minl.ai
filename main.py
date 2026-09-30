@@ -118,8 +118,9 @@ def run_tray_mode(ai: MinlAI) -> None:
 
     from PyQt6.QtWidgets import QApplication
     from PyQt6.QtGui import QIcon
+    from session import qt_argv
 
-    app = QApplication(sys.argv)
+    app = QApplication(qt_argv(sys.argv))
     app.setApplicationName("minl.ai")
     app.setQuitOnLastWindowClosed(False)  # keep alive even when overlays close
 

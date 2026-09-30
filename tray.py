@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from typing import Optional
 
-from PyQt6.QtCore import QObject, QThread, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QBrush, QPen
+from PyQt6.QtCore import QMetaType, QObject, QThread, QTimer, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtDBus import QDBusArgument, QDBusConnection, QDBusMessage
+from PyQt6.QtGui import QIcon, QKeySequence, QPixmap, QPainter, QColor, QBrush, QPen
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QMenu,
     QPushButton, QSizePolicy, QSystemTrayIcon, QTextEdit, QVBoxLayout,
@@ -16,6 +18,7 @@ import logger as _log
 from ai import MinlAI
 from capture import capture_screenshot, read_clipboard
 from config import Config, PROVIDER_GEMINI
+from session import is_wayland
 from voice import transcribe_audio, voice_input_available
 
 _logger = _log.get("tray")
@@ -295,18 +298,31 @@ class MinlTray(QObject):
         dlg.exec()
 
     # ------------------------------------------------------------------ #
-    # Hotkey listener (pynput)
+    # Hotkey listener (pynput on X11, KDE global shortcuts on Wayland)
     # ------------------------------------------------------------------ #
 
     def start_hotkeys(self) -> None:
-        self._hotkey_thread = _HotkeyThread(self._config, self._bridge)
-        self._hotkey_thread.daemon = True
-        self._hotkey_thread.start()
+        if is_wayland():
+            # A Wayland compositor doesn't hand key events to other clients,
+            # so pynput sees nothing there; KDE owns global shortcuts instead.
+            self._hotkeys = _KGlobalAccelHotkeys(self._config, self._bridge, parent=self)
+            self._hotkeys.failed.connect(self._on_hotkeys_failed)
+            QApplication.instance().aboutToQuit.connect(self._hotkeys.stop)
+        else:
+            self._hotkeys = _HotkeyThread(self._config, self._bridge)
+        self._hotkeys.start()
 
     def _restart_hotkeys(self) -> None:
-        if hasattr(self, "_hotkey_thread"):
-            self._hotkey_thread.stop()
-        self.start_hotkeys()
+        self._hotkeys.stop()
+        self._hotkeys.start()
+
+    def _on_hotkeys_failed(self, reason: str) -> None:
+        self._tray.showMessage(
+            "minl.ai — global hotkeys",
+            reason,
+            QSystemTrayIcon.MessageIcon.Warning,
+            10000,
+        )
 
 
 # ------------------------------------------------------------------ #
@@ -414,6 +430,173 @@ class _HotkeyThread:
             self._log.info("Hotkey listener stopped")
         except Exception as exc:
             self._log.error("Hotkey listener failed: %s", exc, exc_info=True)
+
+
+# ------------------------------------------------------------------ #
+# Wayland hotkeys: KDE global shortcuts (kglobalaccel) over D-Bus
+# ------------------------------------------------------------------ #
+
+# pynput key names → Qt portable key names
+_PYNPUT_MODIFIERS = {
+    "ctrl": "Ctrl", "ctrl_l": "Ctrl", "ctrl_r": "Ctrl",
+    "shift": "Shift", "shift_l": "Shift", "shift_r": "Shift",
+    "alt": "Alt", "alt_l": "Alt", "alt_r": "Alt", "alt_gr": "Alt",
+    "cmd": "Meta", "cmd_l": "Meta", "cmd_r": "Meta",
+}
+_PYNPUT_KEYS = {
+    "space": "Space", "enter": "Return", "tab": "Tab", "esc": "Esc",
+    "backspace": "Backspace", "delete": "Del", "insert": "Ins",
+    "home": "Home", "end": "End", "page_up": "PgUp", "page_down": "PgDown",
+    "up": "Up", "down": "Down", "left": "Left", "right": "Right",
+    "print_screen": "Print", "pause": "Pause", "menu": "Menu",
+}
+
+
+def _pynput_to_qt_key(hotkey: str) -> int:
+    """'<ctrl>+<shift>+a' → combined Qt key code, or 0 if it can't be parsed."""
+    parts: list[str] = []
+    for token in hotkey.lower().split("+"):
+        token = token.strip()
+        name = token[1:-1] if token.startswith("<") and token.endswith(">") else token
+        if name in _PYNPUT_MODIFIERS:
+            parts.append(_PYNPUT_MODIFIERS[name])
+        elif name in _PYNPUT_KEYS:
+            parts.append(_PYNPUT_KEYS[name])
+        elif len(name) == 1 or re.fullmatch(r"f\d{1,2}", name):
+            parts.append(name.upper())
+        else:
+            return 0
+    seq = QKeySequence("+".join(parts))
+    return seq[0].toCombined() if seq.count() == 1 else 0
+
+
+class _KGlobalAccelHotkeys(QObject):
+    """Registers the hotkeys with KDE's kglobalaccel daemon.
+
+    Once registered they also show up in System Settings → Shortcuts → minl.ai.
+    """
+
+    failed = pyqtSignal(str)
+
+    _SERVICE = "org.kde.kglobalaccel"
+    _COMPONENT = "minlai"
+    # KGlobalAccel::SetShortcutFlag
+    _IS_DEFAULT = 0x1
+    _SET_PRESENT = 0x2
+    _NO_AUTOLOADING = 0x4
+
+    def __init__(self, config: Config, bridge: HotkeyBridge, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._config = config
+        self._bus = QDBusConnection.sessionBus()
+        self._component_path = ""
+        self._log = _log.get("hotkeys")
+        self._signals = {
+            "screenshot": bridge.screenshot_triggered,
+            "clipboard": bridge.clipboard_triggered,
+        }
+
+    def _actions(self) -> list[tuple[str, str, str]]:
+        hk = self._config.hotkeys
+        return [
+            ("screenshot", "Screenshot → AI", hk.screenshot),
+            ("clipboard", "Clipboard / selection → AI", hk.clipboard),
+        ]
+
+    def _action_id(self, name: str, friendly: str) -> QDBusArgument:
+        # D-Bus "as" (PyQt only marshals a list as QStringList with this type id)
+        return QDBusArgument(
+            [self._COMPONENT, name, "minl.ai", friendly], QMetaType.Type.QStringList.value
+        )
+
+    def _call(self, method: str, *args) -> list:
+        msg = QDBusMessage.createMethodCall(
+            self._SERVICE, "/kglobalaccel", "org.kde.KGlobalAccel", method
+        )
+        msg.setArguments(list(args))
+        reply = self._bus.call(msg)
+        if reply.type() == QDBusMessage.MessageType.ErrorMessage:
+            raise RuntimeError(f"{method}: {reply.errorMessage()}")
+        return reply.arguments()
+
+    def _set_shortcut(self, name: str, friendly: str, key: int, flags: int) -> None:
+        keys = QDBusArgument()  # D-Bus "ai"
+        keys.beginArray(QMetaType.Type.Int.value)
+        keys.add(key, QMetaType.Type.Int.value)
+        keys.endArray()
+        self._call(
+            "setShortcut",
+            self._action_id(name, friendly),
+            keys,
+            QDBusArgument(flags, QMetaType.Type.UInt.value),
+        )
+
+    def start(self) -> None:
+        conflicts: list[str] = []
+        try:
+            for name, friendly, hotkey in self._actions():
+                key = _pynput_to_qt_key(hotkey)
+                if not key:
+                    self._log.warning("Can't parse %s hotkey %r — skipped", name, hotkey)
+                    continue
+                key_text = QKeySequence(key).toString()
+                self._log.info("Registering KDE shortcut %s = %s", name, key_text)
+                self._call("doRegister", self._action_id(name, friendly))
+                self._set_shortcut(name, friendly, key, self._IS_DEFAULT)
+                # Our config is the source of truth: override whatever KDE saved.
+                self._set_shortcut(name, friendly, key, self._SET_PRESENT | self._NO_AUTOLOADING)
+                # KDE silently skips a key that another action already owns
+                owner = self._call("action", key)[0]
+                if owner[:2] != [self._COMPONENT, name]:
+                    taken_by = f"{owner[2]} → {owner[3]}" if len(owner) >= 4 else "another action"
+                    self._log.warning("%s hotkey %s is taken by %s", name, key_text, taken_by)
+                    conflicts.append(f"{key_text} ({name}) is already used by {taken_by}.")
+            self._component_path = self._call("getComponent", self._COMPONENT)[0]  # "o" → str
+        except RuntimeError as exc:
+            self._log.error("kglobalaccel registration failed: %s", exc)
+            self.failed.emit(
+                "KDE global shortcuts (kglobalaccel) are not available. Use the tray menu, "
+                "or bind 'minlai --screenshot' / 'minlai --text' to custom shortcuts."
+            )
+            return
+
+        if not self._bus.connect(
+            self._SERVICE, self._component_path, "org.kde.kglobalaccel.Component",
+            "globalShortcutPressed", self._on_pressed,
+        ):
+            self._log.error("Can't subscribe to %s", self._component_path)
+            self.failed.emit("Can't listen to KDE global shortcuts.")
+            return
+        self._log.info("KDE global shortcuts active (%s)", self._component_path)
+        if conflicts:
+            self.failed.emit(
+                "\n".join(conflicts)
+                + "\nChoose another hotkey in minl.ai Settings, or free it in "
+                "System Settings → Shortcuts."
+            )
+
+    def stop(self) -> None:
+        if not self._component_path:
+            return
+        self._bus.disconnect(
+            self._SERVICE, self._component_path, "org.kde.kglobalaccel.Component",
+            "globalShortcutPressed", self._on_pressed,
+        )
+        self._component_path = ""
+        # Release the key grabs so the combos reach other apps while we're not running
+        for name, friendly, _ in self._actions():
+            try:
+                self._call("setInactive", self._action_id(name, friendly))
+            except RuntimeError as exc:
+                self._log.warning("setInactive(%s) failed: %s", name, exc)
+
+    @pyqtSlot(QDBusMessage)
+    def _on_pressed(self, msg: QDBusMessage) -> None:
+        component, action, _timestamp = msg.arguments()
+        signal = self._signals.get(action)
+        if component == self._COMPONENT and signal is not None:
+            self._log.debug("%s hotkey fired", action.capitalize())
+            signal.emit()
 
 
 # ------------------------------------------------------------------ #

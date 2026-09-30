@@ -8,6 +8,8 @@ import tempfile
 import os
 from typing import Optional
 
+from session import is_wayland
+
 
 TOOL_FLAMESHOT = "flameshot"
 TOOL_SPECTACLE = "spectacle"
@@ -68,12 +70,31 @@ def _capture_spectacle() -> Optional[bytes]:
 
 
 def read_clipboard() -> Optional[str]:
-    """Read X11 PRIMARY selection (highlighted text), fall back to CLIPBOARD."""
+    """Read PRIMARY selection (highlighted text), fall back to CLIPBOARD."""
+    if is_wayland():
+        # Native Wayland apps' selections are only reliably visible via wl-paste;
+        # xclip/xsel go through XWayland and stay as a fallback.
+        text = _try_wl_paste("primary") or _try_wl_paste("clipboard")
+        if text:
+            return text
     text = _try_xclip("primary") or _try_xsel("primary")
     if text:
         return text
     text = _try_xclip("clipboard") or _try_xsel("clipboard")
     return text or None
+
+
+def _try_wl_paste(selection: str) -> Optional[str]:
+    cmd = ["wl-paste", "--no-newline", "--type", "text"]
+    if selection == "primary":
+        cmd.append("--primary")
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
 
 
 def _try_xclip(selection: str) -> Optional[str]:
