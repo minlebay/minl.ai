@@ -51,6 +51,10 @@ height    = 480
 opacity   = 0.95
 font_size = 13
 theme     = "dark"
+
+[tray]
+monochrome   = false
+mono_variant = "auto"
 """
 
 PROVIDER_ANTHROPIC = "anthropic"
@@ -93,10 +97,17 @@ class OverlayConfig:
 
 
 @dataclass
+class TrayConfig:
+    monochrome: bool = False
+    mono_variant: str = "auto"   # "auto" | "light" (for dark panels) | "dark" (for light panels)
+
+
+@dataclass
 class Config:
     api: ApiConfig = field(default_factory=ApiConfig)
     hotkeys: HotkeysConfig = field(default_factory=HotkeysConfig)
     overlay: OverlayConfig = field(default_factory=OverlayConfig)
+    tray: TrayConfig = field(default_factory=TrayConfig)
 
 
 # ── Autostart ─────────────────────────────────────────────────────────────────
@@ -161,6 +172,10 @@ def save_config(config: Config) -> None:
         f"blur_radius    = {config.overlay.blur_radius}",
         f'audio_device   = "{_toml_str(config.overlay.audio_device)}"',
         "",
+        "[tray]",
+        f"monochrome   = {'true' if config.tray.monochrome else 'false'}",
+        f'mono_variant = "{_toml_str(config.tray.mono_variant)}"',
+        "",
     ]
     CONFIG_FILE.write_text("\n".join(lines))
     try:
@@ -180,6 +195,7 @@ def load_config() -> Config:
     api_raw = raw.get("api", {})
     hotkeys_raw = raw.get("hotkeys", {})
     overlay_raw = raw.get("overlay", {})
+    tray_raw = raw.get("tray", {})
 
     provider = api_raw.get("provider", PROVIDER_ANTHROPIC)
     anthropic_key = (
@@ -214,5 +230,9 @@ def load_config() -> Config:
             blur_enabled=bool(overlay_raw.get("blur_enabled", False)),
             blur_radius=int(overlay_raw.get("blur_radius", 10)),
             audio_device=str(overlay_raw.get("audio_device", "")),
+        ),
+        tray=TrayConfig(
+            monochrome=bool(tray_raw.get("monochrome", False)),
+            mono_variant=str(tray_raw.get("mono_variant", "auto")),
         ),
     )

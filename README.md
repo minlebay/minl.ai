@@ -95,6 +95,7 @@ Open via tray menu → **Settings…**
 | Screenshot tool | Flameshot / Spectacle | Region selection tool |
 | Overlay | size, opacity, font | Window appearance |
 | Theme | Dark (gray) / Light | Color scheme |
+| Tray icon | Monochrome + Auto / Light / Dark | Single-color tray glyph; Auto follows the system light/dark scheme |
 | Launch at login | checkbox | Writes XDG autostart entry |
 
 ## Config file
@@ -122,6 +123,10 @@ height    = 480
 opacity   = 0.95
 font_size = 13
 theme     = "dark"              # "dark" or "light"
+
+[tray]
+monochrome   = false            # single-color glyph instead of the colored logo
+mono_variant = "auto"           # "auto", "light" (for dark panels) or "dark" (for light panels)
 ```
 
 ## Supported models

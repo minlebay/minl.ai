@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import math
 import re
 import sys
 from typing import Optional
 
-from PyQt6.QtCore import QMetaType, QObject, QThread, QTimer, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import (
+    QMetaType, QObject, QPointF, QRectF, QThread, QTimer, Qt, pyqtSignal, pyqtSlot,
+)
 from PyQt6.QtDBus import QDBusArgument, QDBusConnection, QDBusMessage
-from PyQt6.QtGui import QIcon, QKeySequence, QPixmap, QPainter, QColor, QBrush, QPen
+from PyQt6.QtGui import QIcon, QKeySequence, QPalette, QPixmap, QPainter, QColor, QBrush, QPen
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QMenu,
     QPushButton, QSizePolicy, QSystemTrayIcon, QTextEdit, QVBoxLayout,
@@ -108,11 +111,13 @@ class MinlTray(QObject):
         self._capture_worker: Optional[CaptureWorker] = None
 
         self._tray = QSystemTrayIcon(self)
-        self._tray.setIcon(_make_icon())
+        self._tray.setIcon(self._tray_icon())
         self._tray.setToolTip("minl.ai desktop assistant")
         self._tray.setContextMenu(self._build_menu())
         self._tray.activated.connect(self._on_tray_activated)
         self._tray.show()
+        # "auto" monochrome follows the system light/dark scheme
+        QApplication.instance().styleHints().colorSchemeChanged.connect(self._refresh_tray_icon)
 
         self._device_monitor = _DeviceMonitor(self)
         self._device_monitor.device_connected.connect(self._on_mic_connected)
@@ -164,6 +169,20 @@ class MinlTray(QObject):
         act_quit.triggered.connect(QApplication.instance().quit)
 
         return menu
+
+    # ------------------------------------------------------------------ #
+    # Icon
+    # ------------------------------------------------------------------ #
+
+    def _tray_icon(self) -> QIcon:
+        cfg = self._config.tray
+        variant = cfg.mono_variant
+        if variant == "auto":
+            variant = _detect_panel_variant()
+        return _make_icon(monochrome=cfg.monochrome, mono_variant=variant)
+
+    def _refresh_tray_icon(self, *_args) -> None:
+        self._tray.setIcon(self._tray_icon())
 
     # ------------------------------------------------------------------ #
     # Tray click
@@ -271,6 +290,7 @@ class MinlTray(QObject):
         if dlg.exec():
             self._ai.reload()
             self._tray.setContextMenu(self._build_menu())
+            self._refresh_tray_icon()
             self._restart_hotkeys()
             _logger.info("Settings saved, hotkeys restarted")
 
@@ -603,8 +623,78 @@ class _KGlobalAccelHotkeys(QObject):
 # Icon generator
 # ------------------------------------------------------------------ #
 
-def _make_icon() -> QIcon:
+_MONO_COLORS = {
+    "light": "#f5f5f5",   # light glyph for dark panels
+    "dark":  "#1a1a1a",   # dark glyph for light panels
+}
+
+_MONO_SIZES = (16, 22, 24, 32, 48, 64, 128)
+
+
+def _detect_panel_variant() -> str:
+    """Pick the monochrome glyph that contrasts with the current color scheme.
+
+    Plasma/GTK apply their scheme to Qt apps too, so a dark scheme means a
+    light glyph and vice versa. Falls back to the palette's window color when
+    the platform theme doesn't report a scheme.
+    """
+    app = QApplication.instance()
+    scheme = app.styleHints().colorScheme()
+    if scheme == Qt.ColorScheme.Dark:
+        return "light"
+    if scheme == Qt.ColorScheme.Light:
+        return "dark"
+    c = app.palette().color(QPalette.ColorRole.Window)
+    luminance = 0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue()
+    return "dark" if luminance > 140 else "light"
+
+
+def _draw_mono_glyph(size: int, color: str) -> QPixmap:
+    """Single-color silhouette of the minlai.svg logo without the background disc:
+    a tilted orbit around the planet with the satellite sitting on it. Strokes
+    are thicker than in the SVG so the orbit survives at 16–22 px."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.scale(size / 64, size / 64)
+    p.translate(32, 32)
+    p.rotate(-30)
+
+    rx, ry = 28.0, 15.0
+    t = math.radians(-30)
+    sat = QPointF(rx * math.cos(t), ry * math.sin(t))
+    sat_r, gap = 6.0, 3.0
+
+    p.setPen(QPen(QColor(color), 4.5))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QRectF(-rx, -ry, 2 * rx, 2 * ry))
+
+    # Cut the orbit around the satellite so the dot reads as separate
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+    p.drawEllipse(sat, sat_r + gap, sat_r + gap)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+    p.setBrush(QColor(color))
+    p.drawEllipse(QPointF(0, 0), 9.5, 9.5)
+    p.drawEllipse(sat, sat_r, sat_r)
+    p.end()
+    return pix
+
+
+def _make_mono_icon(color: str) -> QIcon:
+    icon = QIcon()
+    for size in _MONO_SIZES:
+        icon.addPixmap(_draw_mono_glyph(size, color))
+    return icon
+
+
+def _make_icon(monochrome: bool = False, mono_variant: str = "light") -> QIcon:
     from pathlib import Path
+
+    if monochrome:
+        return _make_mono_icon(_MONO_COLORS.get(mono_variant, _MONO_COLORS["light"]))
 
     svg_candidates = [
         Path(__file__).parent / "minlai.svg",

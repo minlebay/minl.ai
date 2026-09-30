@@ -66,6 +66,12 @@ THEMES = [
     ("Light",       "light"),
 ]
 
+TRAY_MONO_VARIANTS = [
+    ("Auto (match system theme)", "auto"),
+    ("Light (for dark panels)",   "light"),
+    ("Dark (for light panels)",   "dark"),
+]
+
 SCREENSHOT_TOOLS = [
     ("Flameshot",       "flameshot"),
     ("Spectacle (KDE)", "spectacle"),
@@ -114,6 +120,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._build_hotkeys_group())
         layout.addWidget(self._build_overlay_group())
         layout.addWidget(self._build_voice_group())
+        layout.addWidget(self._build_tray_group())
 
         self._autostart_cb = QCheckBox("Launch at login  (adds ~/.config/autostart/minlai.desktop)")
         layout.addWidget(self._autostart_cb)
@@ -308,6 +315,29 @@ class SettingsDialog(QDialog):
         self._refresh_audio_devices()
         return box
 
+    def _build_tray_group(self) -> QGroupBox:
+        box = QGroupBox("Tray icon")
+        form = QFormLayout(box)
+        form.setSpacing(8)
+
+        mono_row = QWidget()
+        h = QHBoxLayout(mono_row)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(8)
+        self._tray_mono_cb = QCheckBox("Monochrome")
+        h.addWidget(self._tray_mono_cb)
+        h.addWidget(QLabel("Color:"))
+        self._tray_mono_variant = QComboBox()
+        for label, _ in TRAY_MONO_VARIANTS:
+            self._tray_mono_variant.addItem(label)
+        self._tray_mono_variant.setEnabled(False)
+        h.addWidget(self._tray_mono_variant)
+        h.addStretch()
+        self._tray_mono_cb.toggled.connect(self._tray_mono_variant.setEnabled)
+        form.addRow("Style:", mono_row)
+
+        return box
+
     def _refresh_audio_devices(self) -> None:
         import voice as _voice
         current = self._audio_device.currentData() or ""
@@ -415,6 +445,12 @@ class SettingsDialog(QDialog):
         self._blur_radius.setEnabled(self._config.overlay.blur_enabled)
         idx = self._audio_device.findData(self._config.overlay.audio_device)
         self._audio_device.setCurrentIndex(idx if idx >= 0 else 0)
+        self._tray_mono_cb.setChecked(self._config.tray.monochrome)
+        for i, (_, val) in enumerate(TRAY_MONO_VARIANTS):
+            if val == self._config.tray.mono_variant:
+                self._tray_mono_variant.setCurrentIndex(i)
+                break
+        self._tray_mono_variant.setEnabled(self._config.tray.monochrome)
         self._autostart_cb.setChecked(is_autostart_enabled())
 
     def _on_save(self) -> None:
@@ -442,6 +478,9 @@ class SettingsDialog(QDialog):
         self._config.overlay.blur_enabled = self._blur_cb.isChecked()
         self._config.overlay.blur_radius = self._blur_radius.value()
         self._config.overlay.audio_device = self._audio_device.currentData() or ""
+
+        self._config.tray.monochrome = self._tray_mono_cb.isChecked()
+        self._config.tray.mono_variant = TRAY_MONO_VARIANTS[self._tray_mono_variant.currentIndex()][1]
 
         save_config(self._config)
         set_autostart(self._autostart_cb.isChecked())
