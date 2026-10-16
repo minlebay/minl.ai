@@ -256,7 +256,7 @@ def transcribe_audio(audio_bytes: bytes, config) -> str:
     from google import genai
     from google.genai import types
 
-    model = config.api.stt_model or "gemini-2.5-flash"
+    model = config.api.stt_model or "gemini-3.5-flash"
     client = genai.Client(api_key=config.api.gemini_api_key)
     response = client.models.generate_content(
         model=model,

@@ -214,7 +214,10 @@ class AIWorker(QThread):
             result = self.fn()
             self.signals.result.emit(result)
         except Exception as exc:
-            self.signals.error.emit(str(exc))
+            from ai import friendly_error
+            import logger as _log
+            _log.get("overlay").error("AI request failed: %s", exc)
+            self.signals.error.emit(friendly_error(exc))
 
 
 class _VoiceWorker(QThread):
@@ -241,7 +244,8 @@ class _VoiceWorker(QThread):
             text = self._transcribe_fn(audio_bytes)
             self.transcribed.emit(text)
         except Exception as exc:
-            self.error.emit(str(exc))
+            from ai import friendly_error
+            self.error.emit(friendly_error(exc))
 
 
 class MinlOverlay(QMainWindow):

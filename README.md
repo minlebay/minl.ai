@@ -107,10 +107,10 @@ Auto-created at `~/.config/minlai/config.toml` on first run:
 provider = "anthropic"          # "anthropic" or "gemini"
 # anthropic_api_key = "sk-ant-..."   # or set ANTHROPIC_API_KEY env var
 # gemini_api_key    = "AIza..."      # or set GEMINI_API_KEY env var
-model     = "claude-sonnet-4-6"
+model     = "claude-sonnet-5-5"
 max_tokens = 2048
 language  = "auto"
-stt_model = "gemini-2.5-flash"  # used for voice transcription regardless of provider
+stt_model = "gemini-3.5-flash"  # used for voice transcription regardless of provider
 
 [hotkeys]
 screenshot      = "<ctrl>+<shift>+a"
@@ -131,11 +131,11 @@ mono_variant = "auto"           # "auto", "light" (for dark panels) or "dark" (f
 
 ## Supported models
 
-**Anthropic:** `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5-20251001`
+**Anthropic:** `claude-sonnet-5-5`, `claude-opus-5-5`, `claude-fable-5-1`, `claude-haiku-5-5`
 
-**Gemini (chat):** `gemini-3.5-flash`, `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.0-flash`, `gemini-1.5-flash`
+**Gemini (chat):** `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-pro-preview`, `gemini-pro-latest`, `gemini-2.5-pro`, `gemini-2.5-flash`
 
-**Gemini (STT):** any Gemini multimodal model — `gemini-2.5-flash` is the default. Voice transcription always uses the Gemini API key regardless of the selected main provider.
+**Gemini (STT):** any Gemini multimodal model — `gemini-3.5-flash` is the default. Voice transcription always uses the Gemini API key regardless of the selected main provider.
 
 ## Project structure
 

@@ -35,10 +35,10 @@ DEFAULT_CONFIG_TOML = """\
 provider = "anthropic"
 # anthropic_api_key = "sk-ant-..."
 # gemini_api_key    = "AIza..."
-model = "claude-sonnet-4-6"
+model = "claude-sonnet-5-5"
 max_tokens = 8192
 language = "auto"
-stt_model = "gemini-2.5-flash"
+stt_model = "gemini-3.5-flash"
 
 [hotkeys]
 screenshot      = "<ctrl>+<shift>+a"
@@ -61,8 +61,8 @@ PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_GEMINI = "gemini"
 
 DEFAULT_MODEL: dict[str, str] = {
-    PROVIDER_ANTHROPIC: "claude-sonnet-4-6",
-    PROVIDER_GEMINI: "gemini-2.5-flash",
+    PROVIDER_ANTHROPIC: "claude-sonnet-5-5",
+    PROVIDER_GEMINI: "gemini-3.8-flash",
 }
 
 
@@ -71,10 +71,10 @@ class ApiConfig:
     provider: str = PROVIDER_ANTHROPIC
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
-    model: str = "claude-sonnet-4-6"
+    model: str = "claude-sonnet-5-5"
     max_tokens: int = 8192
     language: str = "auto"
-    stt_model: str = "gemini-2.5-flash"
+    stt_model: str = "gemini-3.5-flash"
 
 
 @dataclass
@@ -212,9 +212,9 @@ def load_config() -> Config:
             anthropic_api_key=anthropic_key,
             gemini_api_key=gemini_key,
             model=api_raw.get("model", default_model),
-            max_tokens=int(api_raw.get("max_tokens", 2048)),
+            max_tokens=int(api_raw.get("max_tokens", 8192)),
             language=api_raw.get("language", "auto"),
-            stt_model=api_raw.get("stt_model", "gemini-2.5-flash"),
+            stt_model=api_raw.get("stt_model", "gemini-3.5-flash"),
         ),
         hotkeys=HotkeysConfig(
             screenshot=hotkeys_raw.get("screenshot", "<ctrl>+<shift>+a"),

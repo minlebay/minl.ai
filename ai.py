@@ -35,6 +35,24 @@ def _anthropic_block(att: Attachment) -> dict:
     return {"type": "text", "text": f"--- {att.filename} ---\n{_decode_as_text(att)}"}
 
 
+def friendly_error(exc: Exception) -> str:
+    """Turn an API exception into a short, human-readable message."""
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    raw = str(exc)
+    name = type(exc).__name__
+    if status in (401, 403) or "API_KEY_INVALID" in raw or "invalid x-api-key" in raw:
+        return "API key is invalid or revoked. Open Settings and paste a new key."
+    if status == 404 or "not_found" in raw.lower():
+        return "Model not found. Pick an available model in Settings."
+    if status == 429:
+        return "Rate limit or quota exceeded. Try again in a moment."
+    if status in (500, 502, 503, 529) or "overloaded" in raw.lower():
+        return "The AI service is temporarily unavailable. Try again shortly."
+    if "Connection" in name or "Timeout" in name:
+        return "Network error: could not reach the AI service."
+    return raw
+
+
 # ── Anthropic backend ─────────────────────────────────────────────────────────
 
 class _AnthropicBackend:
@@ -119,6 +137,17 @@ class _AnthropicBackend:
 
 # ── Gemini backend ────────────────────────────────────────────────────────────
 
+def _gemini_text(response) -> str:
+    text = response.text
+    if text is None:
+        reason = ""
+        if getattr(response, "candidates", None):
+            reason = str(getattr(response.candidates[0], "finish_reason", "") or "")
+        raise RuntimeError(f"Empty response from Gemini{f' ({reason})' if reason else ''}. "
+                           "Try again or increase max_tokens.")
+    return text
+
+
 class _GeminiBackend:
     def __init__(self, config: Config) -> None:
         # Client is created lazily on first use so an empty key doesn't crash at startup
@@ -151,7 +180,7 @@ class _GeminiBackend:
     def send_text(self, text: str, system: str = "") -> str:
         chat = self._get_chat(system)
         response = chat.send_message(text)
-        return response.text
+        return _gemini_text(response)
 
     def send_image(self, image_bytes: bytes, prompt: str = "", system: str = "") -> str:
         from google.genai import types
@@ -164,7 +193,7 @@ class _GeminiBackend:
             prompt or "What do you see in this screenshot? Describe it concisely and helpfully.",
         ]
         response = chat.send_message(parts)
-        return response.text
+        return _gemini_text(response)
 
     def send_message(
         self, text: str, attachments: Optional[list[Attachment]] = None, system: str = ""
@@ -179,7 +208,7 @@ class _GeminiBackend:
                 parts.append(f"--- {att.filename} ---\n{_decode_as_text(att)}")
         parts.append(text)
         response = chat.send_message(parts)
-        return response.text
+        return _gemini_text(response)
 
 
 # ── Public facade ─────────────────────────────────────────────────────────────
