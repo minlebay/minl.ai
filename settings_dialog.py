@@ -97,6 +97,16 @@ LANGUAGES = [
 ]
 
 
+def _provider_for_model(model: str) -> str | None:
+    """Infer provider from a model id; None for unknown/custom names."""
+    m = model.strip().lower()
+    if m.startswith("claude"):
+        return PROVIDER_ANTHROPIC
+    if m.startswith(("gemini", "gemma")):
+        return PROVIDER_GEMINI
+    return None
+
+
 class SettingsDialog(QDialog):
     def __init__(self, config: Config, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -195,6 +205,13 @@ class SettingsDialog(QDialog):
 
         self._model = QComboBox()
         self._model.setEditable(True)
+        for m in ANTHROPIC_MODELS:
+            self._model.addItem(m)
+        self._model.insertSeparator(self._model.count())
+        for m in GEMINI_MODELS:
+            self._model.addItem(m)
+        self._model.setToolTip("Picking a Claude or Gemini model switches the provider automatically.")
+        self._model.currentTextChanged.connect(self._on_model_changed)
         form.addRow("Model:", self._model)
 
         self._max_tokens = QSpinBox()
@@ -380,20 +397,21 @@ class SettingsDialog(QDialog):
         self._anthropic_key._field.setEnabled(is_anthropic)  # type: ignore[attr-defined]
         self._gemini_key._field.setEnabled(not is_anthropic)  # type: ignore[attr-defined]
 
-        # Swap model list; keep custom value if user typed one
-        current_model = self._model.currentText()
-        models = ANTHROPIC_MODELS if is_anthropic else GEMINI_MODELS
-
-        self._model.blockSignals(True)
-        self._model.clear()
-        for m in models:
-            self._model.addItem(m)
-        # Restore previous value if it's valid for this provider, else default
-        if current_model in models:
-            self._model.setCurrentText(current_model)
-        else:
+        # Keep a custom model typed by the user; replace one from the other provider
+        model_provider = _provider_for_model(self._model.currentText())
+        if model_provider is not None and model_provider != provider:
+            self._model.blockSignals(True)
             self._model.setCurrentText(DEFAULT_MODEL[provider])
-        self._model.blockSignals(False)
+            self._model.blockSignals(False)
+
+    def _on_model_changed(self, model: str) -> None:
+        provider = _provider_for_model(model)
+        if provider is None or provider == self._current_provider():
+            return
+        for i, (_, val) in enumerate(PROVIDERS):
+            if val == provider:
+                self._provider.setCurrentIndex(i)  # triggers _on_provider_changed
+                break
 
     # ------------------------------------------------------------------ #
     # Load / save
