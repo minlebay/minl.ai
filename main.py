@@ -16,7 +16,7 @@ import sys
 import logger as _logger
 from config import load_config, PROVIDER_GEMINI
 from version import __version__
-from capture import capture_screenshot, read_clipboard
+from capture import capture_screenshot, read_clipboard, resolve_tool
 from ai import MinlAI
 from voice import transcribe_audio, voice_input_available
 
@@ -50,7 +50,10 @@ def _require_api_key(ai: MinlAI) -> None:
 
 def run_screenshot_mode(ai: MinlAI, headless: bool = False) -> None:
     """Capture a screen region and send to the AI."""
-    tool = ai._config.hotkeys.screenshot_tool
+    tool = resolve_tool(ai._config.hotkeys.screenshot_tool)
+    if tool is None:
+        print("No screenshot tool found. Install: sudo apt install kde-spectacle (or flameshot)")
+        return
     print(f"Select a screen region ({tool})…")
     image_bytes = capture_screenshot(tool)
     if image_bytes is None:

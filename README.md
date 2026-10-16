@@ -92,7 +92,7 @@ Open via tray menu → **Settings…**
 | Voice STT model | dropdown + editable | Gemini model for transcription |
 | Response language | dropdown | Auto or fixed language |
 | Hotkeys | text fields | pynput format |
-| Screenshot tool | Flameshot / Spectacle | Region selection tool |
+| Screenshot tool | Auto / Flameshot / Spectacle | Region selection tool (Auto picks whichever is installed, Spectacle first on KDE) |
 | Overlay | size, opacity, font | Window appearance |
 | Theme | Dark (gray) / Light | Color scheme |
 | Tray icon | Monochrome + Auto / Light / Dark | Single-color tray glyph; Auto follows the system light/dark scheme |
@@ -115,7 +115,7 @@ stt_model = "gemini-2.5-flash"  # used for voice transcription regardless of pro
 [hotkeys]
 screenshot      = "<ctrl>+<shift>+a"
 clipboard       = "<ctrl>+<shift>+s"
-screenshot_tool = "flameshot"   # "flameshot" or "spectacle"
+screenshot_tool = "auto"        # "auto", "flameshot" or "spectacle"
 
 [overlay]
 width     = 640

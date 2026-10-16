@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -11,13 +12,39 @@ from typing import Optional
 from session import is_wayland
 
 
+TOOL_AUTO = "auto"
 TOOL_FLAMESHOT = "flameshot"
 TOOL_SPECTACLE = "spectacle"
+TOOLS = (TOOL_FLAMESHOT, TOOL_SPECTACLE)
 
 
-def capture_screenshot(tool: str = TOOL_FLAMESHOT) -> Optional[bytes]:
+def is_tool_installed(tool: str) -> bool:
+    return shutil.which(tool) is not None
+
+
+def resolve_tool(tool: str = TOOL_AUTO) -> Optional[str]:
+    """Return the capture tool to use: the requested one if installed, otherwise
+    any installed alternative (Spectacle first on KDE). None if nothing is installed."""
+    if tool in TOOLS and is_tool_installed(tool):
+        return tool
+    is_kde = "KDE" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+    order = (TOOL_SPECTACLE, TOOL_FLAMESHOT) if is_kde else (TOOL_FLAMESHOT, TOOL_SPECTACLE)
+    for candidate in order:
+        if is_tool_installed(candidate):
+            return candidate
+    return None
+
+
+def capture_screenshot(tool: str = TOOL_AUTO) -> Optional[bytes]:
     """Launch region-selection capture tool, return raw PNG bytes or None if cancelled."""
-    if tool == TOOL_SPECTACLE:
+    resolved = resolve_tool(tool)
+    if resolved is None:
+        print("Error: no screenshot tool found. Install: sudo apt install kde-spectacle (or flameshot)",
+              file=sys.stderr)
+        return None
+    if resolved != tool and tool != TOOL_AUTO:
+        print(f"Warning: {tool} not found, using {resolved}", file=sys.stderr)
+    if resolved == TOOL_SPECTACLE:
         return _capture_spectacle()
     return _capture_flameshot()
 
@@ -42,7 +69,6 @@ def _capture_flameshot() -> Optional[bytes]:
 
 
 def _capture_spectacle() -> Optional[bytes]:
-    import shutil
     tmp_dir = tempfile.mkdtemp(prefix="minlai_")
     tmp_path = os.path.join(tmp_dir, "capture.png")
     try:

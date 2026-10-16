@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 
 import logger as _log
 from ai import MinlAI
-from capture import capture_screenshot, read_clipboard
+from capture import capture_screenshot, read_clipboard, resolve_tool
 from config import Config, PROVIDER_GEMINI
 from session import is_wayland
 from voice import transcribe_audio, voice_input_available
@@ -222,8 +222,20 @@ class MinlTray(QObject):
             return
         if self._capture_worker and self._capture_worker.isRunning():
             return
+        tool = resolve_tool(self._config.hotkeys.screenshot_tool)
+        if tool is None:
+            _logger.warning("No screenshot tool installed")
+            self._tray.showMessage(
+                "minl.ai — no screenshot tool",
+                "Install Spectacle or Flameshot: sudo apt install kde-spectacle",
+                QSystemTrayIcon.MessageIcon.Warning,
+                5000,
+            )
+            return
+        if tool != self._config.hotkeys.screenshot_tool:
+            _logger.info("Using %s (configured: %s)", tool, self._config.hotkeys.screenshot_tool)
         self._ai.reset_session()
-        self._capture_worker = CaptureWorker(self._config.hotkeys.screenshot_tool)
+        self._capture_worker = CaptureWorker(tool)
         self._capture_worker.captured.connect(self._on_screenshot_captured)
         self._capture_worker.cancelled.connect(self._on_screenshot_cancelled)
         self._capture_worker.start()

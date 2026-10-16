@@ -43,7 +43,7 @@ stt_model = "gemini-2.5-flash"
 [hotkeys]
 screenshot      = "<ctrl>+<shift>+a"
 clipboard       = "<ctrl>+<shift>+s"
-screenshot_tool = "flameshot"
+screenshot_tool = "auto"
 
 [overlay]
 width     = 640
@@ -81,7 +81,7 @@ class ApiConfig:
 class HotkeysConfig:
     screenshot: str = "<ctrl>+<shift>+a"
     clipboard: str = "<ctrl>+<shift>+s"
-    screenshot_tool: str = "flameshot"
+    screenshot_tool: str = "auto"   # "auto" | "flameshot" | "spectacle"
 
 
 @dataclass
@@ -219,7 +219,7 @@ def load_config() -> Config:
         hotkeys=HotkeysConfig(
             screenshot=hotkeys_raw.get("screenshot", "<ctrl>+<shift>+a"),
             clipboard=hotkeys_raw.get("clipboard", "<ctrl>+<shift>+s"),
-            screenshot_tool=hotkeys_raw.get("screenshot_tool", "flameshot"),
+            screenshot_tool=hotkeys_raw.get("screenshot_tool", "auto"),
         ),
         overlay=OverlayConfig(
             width=int(overlay_raw.get("width", 640)),

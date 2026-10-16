@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 import themes
+from capture import TOOL_AUTO, is_tool_installed
 from config import (
     Config,
     PROVIDER_ANTHROPIC,
@@ -73,6 +74,7 @@ TRAY_MONO_VARIANTS = [
 ]
 
 SCREENSHOT_TOOLS = [
+    ("Auto (detect installed)", "auto"),
     ("Flameshot",       "flameshot"),
     ("Spectacle (KDE)", "spectacle"),
 ]
@@ -221,7 +223,9 @@ class SettingsDialog(QDialog):
         form.setSpacing(8)
 
         self._screenshot_tool = QComboBox()
-        for label, _ in SCREENSHOT_TOOLS:
+        for label, val in SCREENSHOT_TOOLS:
+            if val != TOOL_AUTO and not is_tool_installed(val):
+                label += "  (not installed)"
             self._screenshot_tool.addItem(label)
         form.addRow("Screenshot tool:", self._screenshot_tool)
 
